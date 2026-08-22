@@ -129,6 +129,7 @@ def main() -> None:
                 if key in (ord("q"), 27):
                     break
         finally:
+            팔.토크끄기()
             cap.release()
             cv2.destroyAllWindows()
 

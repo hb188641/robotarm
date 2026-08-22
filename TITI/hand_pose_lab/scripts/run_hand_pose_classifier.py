@@ -123,9 +123,9 @@ def main() -> None:
                 cv2.imshow(window_name, resize_for_display(display, args.display_width))
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), 27):
-                    팔.토크해제()
                     break
         finally:
+            팔.토크끄기()
             cap.release()
             cv2.destroyAllWindows()
 

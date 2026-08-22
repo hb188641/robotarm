@@ -16,7 +16,7 @@ from flask import Flask, jsonify, render_template, request
 from lerobot.motors import Motor, MotorNormMode
 from lerobot.motors.feetech import FeetechMotorsBus
 
-PORT = "COM3"
+PORT = "/dev/cu.usbmodem5B421385261"
 MOTOR_MODEL = "sts3215"
 MOTOR_NAMES = ["motor_1", "motor_2", "motor_3", "motor_4", "motor_5", "motor_6"]
 

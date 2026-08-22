@@ -1,0 +1,155 @@
+from __future__ import annotations
+
+import argparse
+import csv
+import shutil
+import time
+from pathlib import Path
+from typing import Dict
+
+import cv2
+
+from hand_common import (
+    DEFAULT_DATASET_DIR,
+    HAND_LANDMARKER_MODEL_PATH,
+    HAND_POSE_LABELS,
+    LABEL_DISPLAY_KO,
+    LABEL_KEYS,
+    create_hand_landmarker,
+    detect_hand,
+    draw_hand,
+    draw_text_panel,
+    ensure_dir,
+    landmarks_to_vector,
+    open_camera,
+    resize_for_display,
+    timestamp_string,
+    write_json,
+)
+
+LANDMARK_COLUMNS = [f"{axis}{i}" for i in range(21) for axis in ("x", "y", "z")]
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="카메라로 손 랜드마크를 라벨링해서 펴짐/접힘 데이터셋을 수집.")
+    parser.add_argument("--camera", type=int, default=0, help="카메라 인덱스.")
+    parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_DIR, help="데이터셋 디렉터리.")
+    parser.add_argument("--model", type=Path, default=HAND_LANDMARKER_MODEL_PATH, help="hand_landmarker.task 경로.")
+    parser.add_argument("--width", type=int, default=1280)
+    parser.add_argument("--height", type=int, default=720)
+    parser.add_argument("--fps", type=int, default=30)
+    parser.add_argument("--display-width", type=int, default=1280)
+    parser.add_argument("--append", action="store_true", help="기존 데이터셋에 이어서 수집.")
+    return parser.parse_args()
+
+
+def load_counts(labels_path: Path) -> Dict[str, int]:
+    counts = {label: 0 for label in HAND_POSE_LABELS}
+    if not labels_path.exists():
+        return counts
+
+    with labels_path.open("r", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            label = row.get("label")
+            if label in counts:
+                counts[label] += 1
+    return counts
+
+
+def append_row(labels_path: Path, label: str, vector, timestamp: float) -> None:
+    exists = labels_path.exists()
+    fieldnames = ["label", *LANDMARK_COLUMNS, "timestamp"]
+    row = {"label": label, "timestamp": f"{timestamp:.6f}"}
+    row.update({col: f"{value:.6f}" for col, value in zip(LANDMARK_COLUMNS, vector)})
+
+    with labels_path.open("a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if not exists:
+            writer.writeheader()
+        writer.writerow(row)
+
+
+def main() -> None:
+    args = parse_args()
+
+    cap = open_camera(args.camera, args.width, args.height, args.fps)
+    if args.dataset.exists() and not args.append:
+        shutil.rmtree(args.dataset)
+
+    collection_mode = "append existing dataset" if args.append else "new dataset (reset)"
+    dataset_dir = ensure_dir(args.dataset)
+    labels_path = dataset_dir / "landmarks.csv"
+    metadata_path = dataset_dir / "metadata.json"
+
+    write_json(
+        metadata_path,
+        {
+            "created_or_updated_at": timestamp_string(),
+            "collection_mode": collection_mode,
+            "task": "hand open/closed pose classification",
+            "feature": "wrist-centered, scale-normalized 21x3 landmark vector (63-dim)",
+            "labels": HAND_POSE_LABELS,
+        },
+    )
+
+    counts = load_counts(labels_path)
+    window_name = "Collect hand pose dataset"
+    last_label = "none"
+
+    print("Controls: o=펴짐(open)  f=접힘(closed)  q/ESC=종료")
+    print(f"Dataset: {dataset_dir.resolve()}")
+    print(f"Mode: {collection_mode}")
+
+    with create_hand_landmarker(args.model) as detector:
+        try:
+            while True:
+                ok, frame = cap.read()
+                if not ok or frame is None:
+                    print("Frame read failed.")
+                    break
+
+                frame = cv2.flip(frame, 1)
+                timestamp_ms = int(time.monotonic() * 1000)
+                hand = detect_hand(detector, frame, timestamp_ms)
+
+                display = frame.copy()
+                if hand is not None:
+                    draw_hand(display, hand)
+
+                count_line = " ".join(f"{label}:{counts[label]}" for label in HAND_POSE_LABELS)
+                draw_text_panel(
+                    display,
+                    [
+                        "Hand pose dataset collection",
+                        f"Mode: {collection_mode}",
+                        "o = 펴짐(open)   f = 접힘(closed)",
+                        f"hand detected: {'yes' if hand is not None else 'no'}  last={last_label}",
+                        count_line,
+                    ],
+                )
+
+                cv2.imshow(window_name, resize_for_display(display, args.display_width))
+                key = cv2.waitKey(1) & 0xFF
+
+                if key in (ord("q"), 27):
+                    break
+                if key in LABEL_KEYS:
+                    label = LABEL_KEYS[key]
+                    if hand is None:
+                        print("손이 감지되지 않아 저장하지 않음.")
+                        continue
+                    vector = landmarks_to_vector(hand)
+                    append_row(labels_path, label, vector, time.time())
+                    counts[label] += 1
+                    last_label = f"{label}({LABEL_DISPLAY_KO[label]})"
+                    print(f"label={last_label} counts={counts}")
+        finally:
+            cap.release()
+            cv2.destroyAllWindows()
+            print(f"Saved landmarks: {labels_path.resolve()}")
+            print(f"Final counts: {counts}")
+
+
+if __name__ == "__main__":
+    main()

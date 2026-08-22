@@ -1,0 +1,10 @@
+{
+  "created_or_updated_at": "20260808_164745",
+  "collection_mode": "new dataset (reset)",
+  "task": "right arm extended/folded pose classification (shoulder-elbow-wrist)",
+  "feature": "shoulder-centered, scale-normalized 3x3 landmark vector (9-dim)",
+  "labels": [
+    "extended",
+    "folded"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "created_or_updated_at": "20260808_160130",
+  "collection_mode": "new dataset (reset)",
+  "task": "hand open/closed pose classification",
+  "feature": "wrist-centered, scale-normalized 21x3 landmark vector (63-dim)",
+  "labels": [
+    "open",
+    "closed"
+  ]
+}

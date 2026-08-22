@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>Robot Arm Control</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --panel: #171d2b;
+    --panel-2: #1f273a;
+    --text: #e7ecf5;
+    --muted: #8a93a8;
+    --accent: #4f8cff;
+    --accent-2: #ff7847;
+    --ok: #35c98f;
+    --bad: #ff5f6d;
+    --arm: #5b7bd8;
+    --joint: #ffd166;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Pretendard, sans-serif;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    padding: 20px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+
+  #stage {
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 16px;
+    flex: 1 1 620px;
+    min-width: 480px;
+  }
+  #panel {
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 16px;
+    width: 360px;
+  }
+
+  svg { width: 100%; height: auto; display: block; touch-action: none; }
+
+  .joint-handle { cursor: grab; }
+  .joint-handle:active { cursor: grabbing; }
+
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 13px;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); }
+  .dot.ok { background: var(--ok); }
+
+  button {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid #2c3648;
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  button:hover { border-color: var(--accent); }
+  button.on { background: var(--accent); border-color: var(--accent); }
+
+  .motor-card {
+    background: var(--panel-2);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+  .motor-card .row1 {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .motor-card .name { font-weight: 600; font-size: 13px; }
+  .motor-card .desc { color: var(--muted); font-size: 11px; }
+  .motor-card .vals { font-size: 11px; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .motor-card input[type="range"] { width: 100%; }
+  .dir-hint { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+  .cw-arrow { fill: none; stroke: var(--accent-2); stroke-width: 2; marker-end: url(#arrowhead); opacity: 0.85; }
+  .arm-seg { stroke: var(--arm); stroke-width: 16; stroke-linecap: round; fill: none; }
+  .joint-dot { fill: var(--joint); stroke: #7a5b00; stroke-width: 2; }
+  .base-plate { fill: #2c3648; stroke: #444f66; stroke-width: 2; }
+  .label { fill: var(--muted); font-size: 11px; }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <h1>Robot Arm Control</h1>
+  <p class="sub">조인트(노란 원)를 마우스로 드래그하면 해당 모터가 그 방향으로 회전합니다. 주황 화살표 = tick 증가(CW) 방향.</p>
+
+  <div class="status-row">
+    <span id="connDot" class="dot"></span>
+    <span id="connText">연결 확인 중...</span>
+    <button id="torqueBtn">Torque OFF</button>
+  </div>
+
+  <svg viewBox="0 0 700 560">
+    <defs>
+      <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+        <path d="M0,0 L6,3 L0,6 Z" fill="#ff7847" />
+      </marker>
+    </defs>
+
+    <!-- Top-view base yaw gauge (motor_1) -->
+    <g id="yawGauge" transform="translate(110,90)">
+      <circle r="55" fill="#1f273a" stroke="#2c3648" stroke-width="2" />
+      <text x="0" y="-64" text-anchor="middle" class="label">motor_1 (base yaw / top view)</text>
+      <line x1="0" y1="0" x2="0" y2="-55" stroke="#2c3648" stroke-width="1" stroke-dasharray="3,3" />
+      <path id="yawArc" class="cw-arrow" d="" />
+      <line id="yawPointer" x1="0" y1="0" x2="0" y2="-45" stroke="#ffd166" stroke-width="4" stroke-linecap="round" />
+      <circle id="yawHandle" class="joint-handle joint-dot" r="9" cx="0" cy="-45" data-motor="motor_1" data-kind="yaw" />
+    </g>
+
+    <!-- Wrist roll gauge (motor_5) -->
+    <g id="rollGauge" transform="translate(560,90)">
+      <circle r="40" fill="#1f273a" stroke="#2c3648" stroke-width="2" />
+      <text x="0" y="-49" text-anchor="middle" class="label">motor_5 (wrist roll)</text>
+      <path id="rollArc" class="cw-arrow" d="" />
+      <line id="rollPointer" x1="0" y1="0" x2="0" y2="-32" stroke="#ffd166" stroke-width="4" stroke-linecap="round" />
+      <circle id="rollHandle" class="joint-handle joint-dot" r="8" cx="0" cy="-32" data-motor="motor_5" data-kind="roll" />
+    </g>
+
+    <!-- Side-view arm chain -->
+    <g transform="translate(0,0)">
+      <rect x="240" y="470" width="120" height="26" rx="6" class="base-plate" />
+      <text x="300" y="510" text-anchor="middle" class="label">base</text>
+
+      <path id="armSeg2" class="arm-seg" d="" />
+      <path id="armSeg3" class="arm-seg" d="" />
+      <path id="armSeg4" class="arm-seg" d="" />
+
+      <path id="arc2" class="cw-arrow" d="" />
+      <path id="arc3" class="cw-arrow" d="" />
+      <path id="arc4" class="cw-arrow" d="" />
+
+      <circle id="shoulderDot" class="joint-dot" r="10" cx="300" cy="470" />
+      <circle id="elbowHandle" class="joint-handle joint-dot" r="11" data-motor="motor_2" data-kind="link" />
+      <circle id="wristHandle" class="joint-handle joint-dot" r="11" data-motor="motor_3" data-kind="link" />
+      <circle id="handHandle" class="joint-handle joint-dot" r="9" data-motor="motor_4" data-kind="link" />
+
+      <!-- gripper jaws -->
+      <g id="gripper"></g>
+    </g>
+  </svg>
+</div>
+
+<div id="panel">
+  <h1>Motors</h1>
+  <p class="sub">슬라이더 또는 위 그림의 조인트 드래그로 각 모터를 개별 제어합니다.</p>
+  <div id="motorCards"></div>
+</div>
+
+<script>
+const MOTORS = [
+  { name: "motor_1", label: "Base yaw",     desc: "베이스 좌우 회전 (top view)" },
+  { name: "motor_2", label: "Shoulder",     desc: "어깨 (위/아래로 팔 전체를 들어올림)" },
+  { name: "motor_3", label: "Elbow",        desc: "팔꿈치 굽힘" },
+  { name: "motor_4", label: "Wrist flex",   desc: "손목 굽힘" },
+  { name: "motor_5", label: "Wrist roll",   desc: "손목 회전(roll)" },
+  { name: "motor_6", label: "Gripper",      desc: "그리퍼 열기/닫기" },
+];
+
+const RAW_MAX = 4095;
+const CENTER = 2048;                    // raw tick 중앙값 = 0도 기준
+const TICKS_PER_DEG = 4096 / 360;
+const DEG2RAD = Math.PI / 180;
+
+const GRIP_CLOSED = 1200;               // motor_6 raw: 닫힘
+const GRIP_OPEN = 3000;                 // motor_6 raw: 열림
+
+const SHOULDER = { x: 300, y: 470 };
+const LEN2 = 150;   // upper arm
+const LEN3 = 120;   // forearm
+const LEN4 = 70;    // hand
+
+// 각 모터의 현재 raw position (서버에서 폴링한 값 or 로컬 드래그 값)
+const pos = { motor_1: CENTER, motor_2: CENTER, motor_3: CENTER, motor_4: CENTER, motor_5: CENTER, motor_6: (GRIP_CLOSED + GRIP_OPEN) / 2 };
+
+let activeDrag = null;      // 현재 드래그 중인 motor 이름 (드래그 중엔 폴링으로 덮어쓰지 않음)
+let lastSent = {};
+const SEND_INTERVAL_MS = 40;
+
+function rawToDeg(raw) {
+  return (raw - CENTER) / TICKS_PER_DEG;
+}
+function degToRaw(deg) {
+  return Math.round(CENTER + deg * TICKS_PER_DEG);
+}
+function clamp(v, lo, hi) { return Math.min(Math.max(v, lo), hi); }
+
+// ---- Forward kinematics + rendering ----
+function render() {
+  const theta1 = rawToDeg(pos.motor_1);
+  const theta2 = rawToDeg(pos.motor_2);
+  const theta3 = rawToDeg(pos.motor_3);
+  const theta4 = rawToDeg(pos.motor_4);
+  const theta5 = rawToDeg(pos.motor_5);
+
+  // Yaw gauge (motor_1)
+  drawGaugePointer("yawPointer", "yawHandle", 0, 0, 45, theta1);
+  drawArc("yawArc", 0, 0, 30, theta1);
+
+  // Roll gauge (motor_5)
+  drawGaugePointer("rollPointer", "rollHandle", 0, 0, 32, theta5);
+  drawArc("rollArc", 0, 0, 22, theta5);
+
+  // Side-view chain
+  const a2 = theta2 * DEG2RAD;
+  const elbow = { x: SHOULDER.x + LEN2 * Math.sin(a2), y: SHOULDER.y - LEN2 * Math.cos(a2) };
+
+  const a23deg = theta2 + theta3;
+  const a23 = a23deg * DEG2RAD;
+  const wrist = { x: elbow.x + LEN3 * Math.sin(a23), y: elbow.y - LEN3 * Math.cos(a23) };
+
+  const a234deg = theta2 + theta3 + theta4;
+  const a234 = a234deg * DEG2RAD;
+  const hand = { x: wrist.x + LEN4 * Math.sin(a234), y: wrist.y - LEN4 * Math.cos(a234) };
+
+  setLine("armSeg2", SHOULDER, elbow);
+  setLine("armSeg3", elbow, wrist);
+  setLine("armSeg4", wrist, hand);
+
+  setHandle("elbowHandle", elbow);
+  setHandle("wristHandle", wrist);
+  setHandle("handHandle", hand);
+
+  drawArc("arc2", SHOULDER.x, SHOULDER.y, 34, theta2);
+  drawArc("arc3", elbow.x, elbow.y, 30, a23deg, theta2);
+  drawArc("arc4", wrist.x, wrist.y, 24, a234deg, a23deg);
+
+  drawGripper(hand, a234deg);
+
+  document.getElementById("torqueBtn").classList.toggle("on", torqueOn);
+}
+
+function setLine(id, p1, p2) {
+  document.getElementById(id).setAttribute("d", `M${p1.x},${p1.y} L${p2.x},${p2.y}`);
+}
+function setHandle(id, p) {
+  const el = document.getElementById(id);
+  el.setAttribute("cx", p.x);
+  el.setAttribute("cy", p.y);
+}
+function drawGaugePointer(pointerId, handleId, cx, cy, r, deg) {
+  const rad = deg * DEG2RAD;
+  const x = cx + r * Math.sin(rad);
+  const y = cy - r * Math.cos(rad);
+  const pointer = document.getElementById(pointerId);
+  pointer.setAttribute("x2", x);
+  pointer.setAttribute("y2", y);
+  const handle = document.getElementById(handleId);
+  handle.setAttribute("cx", x);
+  handle.setAttribute("cy", y);
+}
+// 회전 방향(CW=tick 증가) 표시용 짧은 호. base는 항상 0도에서 시작, 관절은 상위 링크 각도에서 시작
+function drawArc(id, cx, cy, r, toDeg, fromDeg) {
+  fromDeg = fromDeg === undefined ? 0 : fromDeg;
+  const start = fromDeg * DEG2RAD;
+  const end = toDeg * DEG2RAD;
+  const sx = cx + r * Math.sin(start);
+  const sy = cy - r * Math.cos(start);
+  const ex = cx + r * Math.sin(end);
+  const ey = cy - r * Math.cos(end);
+  const delta = toDeg - fromDeg;
+  const largeArc = Math.abs(delta) > 180 ? 1 : 0;
+  const sweep = delta >= 0 ? 1 : 0;
+  document.getElementById(id).setAttribute(
+    "d", `M${sx.toFixed(1)},${sy.toFixed(1)} A${r},${r} 0 ${largeArc} ${sweep} ${ex.toFixed(1)},${ey.toFixed(1)}`
+  );
+}
+function drawGripper(hand, angleDeg) {
+  const g = document.getElementById("gripper");
+  const openRatio = clamp((pos.motor_6 - GRIP_CLOSED) / (GRIP_OPEN - GRIP_CLOSED), 0, 1);
+  const spread = 8 + openRatio * 26; // degrees each jaw opens from center line
+  const jawLen = 34;
+  const a = angleDeg * DEG2RAD;
+
+  function jawPath(sideDeg) {
+    const jawAngle = (angleDeg + sideDeg) * DEG2RAD;
+    const ex = hand.x + jawLen * Math.sin(jawAngle);
+    const ey = hand.y - jawLen * Math.cos(jawAngle);
+    return `M${hand.x},${hand.y} L${ex},${ey}`;
+  }
+
+  g.innerHTML = `
+    <path d="${jawPath(spread)}" stroke="#ffd166" stroke-width="8" stroke-linecap="round" fill="none" />
+    <path d="${jawPath(-spread)}" stroke="#ffd166" stroke-width="8" stroke-linecap="round" fill="none" />
+  `;
+}
+
+// ---- Motor side panel (sliders) ----
+function buildPanel() {
+  const container = document.getElementById("motorCards");
+  MOTORS.forEach(m => {
+    const card = document.createElement("div");
+    card.className = "motor-card";
+    card.innerHTML = `
+      <div class="row1">
+        <span class="name">${m.name} — ${m.label}</span>
+        <span class="vals" id="vals_${m.name}">--</span>
+      </div>
+      <div class="desc">${m.desc}</div>
+      <input type="range" min="0" max="${RAW_MAX}" value="${pos[m.name]}" id="slider_${m.name}" />
+      <div class="dir-hint">tick 증가 = 시계방향(CW)</div>
+    `;
+    container.appendChild(card);
+
+    const slider = card.querySelector(`#slider_${m.name}`);
+    slider.addEventListener("input", () => {
+      activeDrag = m.name;
+      pos[m.name] = Number(slider.value);
+      render();
+      updateVals(m.name);
+      maybeSend(m.name);
+    });
+    slider.addEventListener("change", () => {
+      sendGoal(m.name, pos[m.name]);
+      activeDrag = null;
+    });
+  });
+}
+
+function updateVals(name) {
+  const el = document.getElementById(`vals_${name}`);
+  const deg = name === "motor_6" ? "" : ` (${rawToDeg(pos[name]).toFixed(0)}°)`;
+  el.textContent = `${pos[name]}${deg}`;
+  const slider = document.getElementById(`slider_${name}`);
+  if (slider && Number(slider.value) !== pos[name]) slider.value = pos[name];
+}
+function updateAllVals() { MOTORS.forEach(m => updateVals(m.name)); }
+
+// ---- Mouse drag on SVG joints ----
+function angleFromPivot(pivotX, pivotY, mx, my) {
+  const dx = mx - pivotX;
+  const dy = my - pivotY;
+  return Math.atan2(dx, -dy) / DEG2RAD; // 0deg = up, positive = clockwise
+}
+
+function svgPoint(svg, evt) {
+  const pt = svg.createSVGPoint();
+  pt.x = evt.clientX;
+  pt.y = evt.clientY;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+function setupDrag() {
+  const svg = document.querySelector("svg");
+
+  document.querySelectorAll(".joint-handle").forEach(handle => {
+    handle.addEventListener("pointerdown", (evt) => {
+      const motor = handle.dataset.motor;
+      const kind = handle.dataset.kind;
+      activeDrag = motor;
+      handle.setPointerCapture(evt.pointerId);
+
+      const onMove = (moveEvt) => {
+        const p = svgPoint(svg, moveEvt);
+        let deg;
+
+        if (kind === "yaw") {
+          deg = angleFromPivot(110, 90, p.x, p.y); // yawGauge translate origin
+        } else if (kind === "roll") {
+          deg = angleFromPivot(560, 90, p.x, p.y); // rollGauge translate origin
+        } else if (motor === "motor_2") {
+          deg = angleFromPivot(SHOULDER.x, SHOULDER.y, p.x, p.y);
+        } else if (motor === "motor_3") {
+          const theta2 = rawToDeg(pos.motor_2);
+          const a2 = theta2 * DEG2RAD;
+          const elbow = { x: SHOULDER.x + LEN2 * Math.sin(a2), y: SHOULDER.y - LEN2 * Math.cos(a2) };
+          deg = angleFromPivot(elbow.x, elbow.y, p.x, p.y) - theta2;
+        } else if (motor === "motor_4") {
+          const theta2 = rawToDeg(pos.motor_2);
+          const theta3 = rawToDeg(pos.motor_3);
+          const a2 = theta2 * DEG2RAD;
+          const elbow = { x: SHOULDER.x + LEN2 * Math.sin(a2), y: SHOULDER.y - LEN2 * Math.cos(a2) };
+          const a23 = (theta2 + theta3) * DEG2RAD;
+          const wrist = { x: elbow.x + LEN3 * Math.sin(a23), y: elbow.y - LEN3 * Math.cos(a23) };
+          deg = angleFromPivot(wrist.x, wrist.y, p.x, p.y) - (theta2 + theta3);
+        }
+
+        deg = clamp(deg, -175, 175);
+        pos[motor] = clamp(degToRaw(deg), 0, RAW_MAX);
+        render();
+        updateVals(motor);
+        maybeSend(motor);
+      };
+
+      const onUp = () => {
+        sendGoal(motor, pos[motor]);
+        activeDrag = null;
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    });
+  });
+}
+
+// ---- API ----
+let torqueOn = false;
+
+function maybeSend(motor) {
+  const now = performance.now();
+  if (!lastSent[motor] || now - lastSent[motor] > SEND_INTERVAL_MS) {
+    lastSent[motor] = now;
+    sendGoal(motor, pos[motor]);
+  }
+}
+
+function sendGoal(motor, position) {
+  fetch(`/api/motor/${motor}/goal`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ position: Math.round(position) }),
+  }).then(setConnected).catch(() => setConnected(false));
+}
+
+function pollState() {
+  fetch("/api/state")
+    .then(r => r.json())
+    .then(data => {
+      setConnected(true);
+      Object.keys(data).forEach(name => {
+        if (name !== activeDrag) pos[name] = data[name];
+      });
+      render();
+      updateAllVals();
+    })
+    .catch(() => setConnected(false));
+}
+
+function setConnected(ok) {
+  const dot = document.getElementById("connDot");
+  const text = document.getElementById("connText");
+  dot.classList.toggle("ok", !!ok);
+  text.textContent = ok ? "연결됨" : "연결 안됨 (Flask 서버 / 모터 확인)";
+}
+
+document.getElementById("torqueBtn").addEventListener("click", () => {
+  torqueOn = !torqueOn;
+  fetch("/api/torque", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled: torqueOn }),
+  });
+  document.getElementById("torqueBtn").textContent = torqueOn ? "Torque ON" : "Torque OFF";
+  render();
+});
+
+buildPanel();
+setupDrag();
+render();
+updateAllVals();
+pollState();
+setInterval(pollState, 300);
+</script>
+</body>
+</html>

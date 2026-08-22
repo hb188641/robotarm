@@ -2,7 +2,7 @@
 
 from 클라이언트 import 로봇팔
 
-팔 = 로봇팔()  # 기본: http://localhost:5000
+팔 = 로봇팔()  # 기본: http://localhost:6000
 
 
 

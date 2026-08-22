@@ -7,7 +7,7 @@ lerobot/시리얼 포트를 직접 다루지 않고, Flask 서버(app.py)가 떠
 사용 예:
     from client import 로봇팔
 
-    arm = 로봇팔()                          # 기본: http://localhost:5000
+    arm = 로봇팔()                          # 기본: http://localhost:6000
     arm.이동("motor_2", 2500)               # 모터 하나만 raw tick으로 이동
     arm.각도이동("motor_3", -30)            # 중앙(2048=0도) 기준 각도로 이동
     arm.여러개이동({"motor_3": 1600, "motor_4": 2300})  # 여러 모터 동시 이동
@@ -32,7 +32,7 @@ RELEASE_POSITION = 2300
 
 
 class 로봇팔:
-    def __init__(self, base_url: str = "http://localhost:5000", timeout: float = 2.0):
+    def __init__(self, base_url: str = "http://localhost:6000", timeout: float = 2.0):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 

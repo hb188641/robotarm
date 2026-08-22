@@ -30,4 +30,4 @@ pip install -r TITI/robot_arm_app/requirements.txt
 python TITI/robot_arm_app/app.py
 ```
 
-서버가 뜨면 `http://localhost:5000`에서 모터를 제어하고, `GET /api/state`로 현재 모터 위치를 확인할 수 있습니다.
+서버가 뜨면 `http://localhost:6000`에서 모터를 제어하고, `GET /api/state`로 현재 모터 위치를 확인할 수 있습니다.

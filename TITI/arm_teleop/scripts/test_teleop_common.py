@@ -1,6 +1,7 @@
 import math
 
 from teleop_common import (
+    EmaFilter,
     Point3,
     compute_elbow_flex_deg,
     compute_shoulder_lift_deg,
@@ -51,3 +52,22 @@ def test_elbow_flex_90_when_right_angle():
     wrist = Point3(x=0.8, y=0.6, z=0.0)
     deg = compute_elbow_flex_deg(shoulder, elbow, wrist)
     assert math.isclose(deg, 90.0, abs_tol=1e-6)
+
+
+def test_ema_first_update_returns_input_unchanged():
+    f = EmaFilter(alpha=0.3)
+    assert f.update(10.0) == 10.0
+
+
+def test_ema_smooths_toward_new_value():
+    f = EmaFilter(alpha=0.3)
+    f.update(10.0)
+    result = f.update(20.0)
+    assert result == 0.3 * 20.0 + 0.7 * 10.0
+
+
+def test_ema_reset_clears_state():
+    f = EmaFilter(alpha=0.3)
+    f.update(10.0)
+    f.reset()
+    assert f.update(5.0) == 5.0

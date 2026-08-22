@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Optional, Tuple
 
 LEFT_SHOULDER_IDX = 11
 RIGHT_SHOULDER_IDX = 12
@@ -47,3 +47,21 @@ def compute_elbow_flex_deg(shoulder: Point3, elbow: Point3, wrist: Point3) -> fl
     v1 = (shoulder.x - elbow.x, shoulder.y - elbow.y)
     v2 = (wrist.x - elbow.x, wrist.y - elbow.y)
     return 180.0 - _angle_between_2d(v1, v2)
+
+
+class EmaFilter:
+    """지수이동평균. 첫 update()는 그대로 반환, 이후는 alpha 비율로 새 값을 반영."""
+
+    def __init__(self, alpha: float = 0.3):
+        self.alpha = alpha
+        self._value: Optional[float] = None
+
+    def update(self, new_value: float) -> float:
+        if self._value is None:
+            self._value = new_value
+        else:
+            self._value = self.alpha * new_value + (1 - self.alpha) * self._value
+        return self._value
+
+    def reset(self) -> None:
+        self._value = None

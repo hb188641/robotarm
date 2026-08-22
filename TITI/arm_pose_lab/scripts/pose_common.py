@@ -9,8 +9,6 @@ import cv2
 import mediapipe as mp
 import numpy as np
 
-POSE_LANDMARKER_MODEL_PATH = Path("C:/Users/user/Desktop/pose_landmarker_full.task")
-
 ARM_POSE_LABELS = ["extended", "folded"]
 LABEL_DISPLAY_KO = {"extended": "펴짐", "folded": "접힘"}
 
@@ -28,9 +26,11 @@ CONNECTIONS = mp.tasks.vision.PoseLandmarksConnections.POSE_LANDMARKS
 
 # scripts/pose_common.py -> scripts/ -> arm_pose_lab/
 LAB_DIR = Path(__file__).resolve().parent.parent
+REPO_ROOT = LAB_DIR.parent.parent
 DEFAULT_DATASET_DIR = LAB_DIR / "data" / "arm_pose"
 DEFAULT_MODEL_PATH = LAB_DIR / "models" / "arm_pose_classifier.pt"
 DEFAULT_SUMMARY_PATH = LAB_DIR / "models" / "arm_pose_training_summary.json"
+POSE_LANDMARKER_MODEL_PATH = REPO_ROOT / "pose_landmarker_full.task"
 
 
 def ensure_dir(path: Path) -> Path:

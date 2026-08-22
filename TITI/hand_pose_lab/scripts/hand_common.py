@@ -9,11 +9,11 @@ import cv2
 import mediapipe as mp
 import numpy as np
 
-HAND_LANDMARKER_MODEL_PATH = Path("C:/Users/user/Desktop/hand_landmarker.task")
-
-# scripts/hand_common.py -> scripts/ -> hand_pose_lab/
+# scripts/hand_common.py -> scripts/ -> hand_pose_lab/ -> TITI/ -> 저장소 루트
 # 어느 디렉터리에서 스크립트를 실행하든 항상 같은 data/, models/ 위치를 가리키도록 함
 LAB_DIR = Path(__file__).resolve().parent.parent
+REPO_ROOT = LAB_DIR.parent.parent
+HAND_LANDMARKER_MODEL_PATH = REPO_ROOT / "hand_landmarker.task"
 DEFAULT_DATASET_DIR = LAB_DIR / "data" / "hand_pose"
 DEFAULT_MODEL_PATH = LAB_DIR / "models" / "hand_pose_classifier.pt"
 DEFAULT_SUMMARY_PATH = LAB_DIR / "models" / "hand_pose_training_summary.json"

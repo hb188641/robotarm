@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 CAMERA_INDEX = 0
-MODEL_PATH = "C:/Users/User/Desktop/hand_landmarker.task"
+MODEL_PATH = Path(__file__).resolve().parent / "hand_landmarker.task"
 CONNECTIONS = mp.tasks.vision.HandLandmarksConnections.HAND_CONNECTIONS
 
 def draw_hand(frame, hand):

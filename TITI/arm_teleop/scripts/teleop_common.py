@@ -94,3 +94,9 @@ def load_calibration(path: Path) -> Dict[str, MotorCalibration]:
 def save_calibration(path: Path, calibration: Dict[str, MotorCalibration]) -> None:
     payload = {motor: asdict(cal) for motor, cal in calibration.items()}
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def clamp_step(current: int, target: int, max_delta: int) -> int:
+    """current에서 target으로 한 번에 갈 수 있는 raw tick 변화량을 max_delta로 제한."""
+    delta = max(-max_delta, min(max_delta, target - current))
+    return current + delta

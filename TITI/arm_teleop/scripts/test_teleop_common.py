@@ -5,6 +5,7 @@ from teleop_common import (
     EmaFilter,
     MotorCalibration,
     Point3,
+    clamp_step,
     compute_elbow_flex_deg,
     compute_shoulder_lift_deg,
     compute_yaw_deg,
@@ -113,3 +114,19 @@ def test_save_and_load_calibration_roundtrip(tmp_path):
     assert loaded["motor_1"] == calibration["motor_1"]
     assert loaded["motor_2"] == calibration["motor_2"]
     assert json.loads(path.read_text(encoding="utf-8"))["motor_1"]["yaw_zero"] == 1.5
+
+
+def test_clamp_step_passes_through_when_within_limit():
+    assert clamp_step(current=2048, target=2060, max_delta=15) == 2060
+
+
+def test_clamp_step_limits_large_positive_jump():
+    assert clamp_step(current=2048, target=3000, max_delta=15) == 2063
+
+
+def test_clamp_step_limits_large_negative_jump():
+    assert clamp_step(current=2048, target=1000, max_delta=15) == 2033
+
+
+def test_clamp_step_exact_limit_passes_through():
+    assert clamp_step(current=2048, target=2063, max_delta=15) == 2063

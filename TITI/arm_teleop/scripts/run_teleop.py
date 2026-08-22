@@ -16,6 +16,7 @@ from teleop_common import (
     RIGHT_HIP_IDX,
     RIGHT_SHOULDER_IDX,
     RIGHT_WRIST_IDX,
+    clamp_step,
     compute_elbow_flex_deg,
     compute_shoulder_lift_deg,
     compute_yaw_deg,
@@ -48,6 +49,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fps", type=int, default=30)
     parser.add_argument("--display-width", type=int, default=1280)
     parser.add_argument("--alpha", type=float, default=0.3, help="EMA 스무딩 계수 (0~1, 클수록 반응 빠르고 떨림 큼)")
+    parser.add_argument(
+        "--max-raw-delta",
+        type=int,
+        default=15,
+        help="프레임당 raw tick 최대 변화량(속도 제한). 작을수록 느리고 안전함 (기본 15 ≈ 초당 최대 약 26~45도)",
+    )
     parser.add_argument("--dry-run", action="store_true", help="계산된 raw 값만 출력하고 실제 모터에는 보내지 않음")
     return parser.parse_args()
 
@@ -58,11 +65,16 @@ def main() -> None:
         raise FileNotFoundError(f"캘리브레이션 파일이 없습니다: {CALIBRATION_PATH}. 먼저 calibrate.py를 실행하세요.")
     calibration = load_calibration(CALIBRATION_PATH)
 
-    filters = {motor: EmaFilter(alpha=args.alpha) for motor in ("motor_1", "motor_2", "motor_3")}
+    motor_names = ("motor_1", "motor_2", "motor_3")
+    filters = {motor: EmaFilter(alpha=args.alpha) for motor in motor_names}
 
     arm = 로봇팔()
-    if not args.dry_run:
+    if args.dry_run:
+        # 하드웨어 없이도 동작 확인이 가능하도록, 각 모터의 캘리브레이션 시작점을 속도 제한의 기준으로 삼는다.
+        last_raw = {motor: calibration[motor].raw_a for motor in motor_names}
+    else:
         arm.토크켜기()
+        last_raw = {motor: arm.위치(motor) for motor in motor_names}
 
     cap = open_camera(args.camera, args.width, args.height, args.fps)
     window_name = "Arm teleop (motor_1~3)"
@@ -102,9 +114,12 @@ def main() -> None:
                         "motor_3": filters["motor_3"].update(raw_elbow),
                     }
 
-                    targets = {
-                        motor: calibration[motor].human_deg_to_raw(deg) for motor, deg in smoothed.items()
-                    }
+                    targets = {}
+                    for motor, deg in smoothed.items():
+                        desired_raw = calibration[motor].human_deg_to_raw(deg)
+                        limited_raw = clamp_step(last_raw[motor], desired_raw, args.max_raw_delta)
+                        last_raw[motor] = limited_raw
+                        targets[motor] = limited_raw
 
                     for motor, deg in smoothed.items():
                         lines.append(f"{motor}: {deg:.1f} deg -> raw {targets[motor]}")

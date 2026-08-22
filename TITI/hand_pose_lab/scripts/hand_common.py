@@ -8,6 +8,7 @@ from typing import Dict, Iterable, List, Tuple
 import cv2
 import mediapipe as mp
 import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 
 # scripts/hand_common.py -> scripts/ -> hand_pose_lab/ -> TITI/ -> 저장소 루트
 # 어느 디렉터리에서 스크립트를 실행하든 항상 같은 data/, models/ 위치를 가리키도록 함
@@ -17,6 +18,29 @@ HAND_LANDMARKER_MODEL_PATH = REPO_ROOT / "hand_landmarker.task"
 DEFAULT_DATASET_DIR = LAB_DIR / "data" / "hand_pose"
 DEFAULT_MODEL_PATH = LAB_DIR / "models" / "hand_pose_classifier.pt"
 DEFAULT_SUMMARY_PATH = LAB_DIR / "models" / "hand_pose_training_summary.json"
+
+# cv2.putText는 한글 글리프가 없는 Hershey 폰트만 지원해서 화면에 "?"로 깨진다.
+# OS별 한글 지원 폰트 후보 중 존재하는 첫 번째를 사용해 PIL로 텍스트를 그린다.
+_KOREAN_FONT_CANDIDATES = [
+    "/System/Library/Fonts/AppleSDGothicNeo.ttc",  # macOS
+    "C:/Windows/Fonts/malgun.ttf",  # Windows
+    "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",  # Linux
+]
+_FONT_CACHE: Dict[int, ImageFont.ImageFont] = {}
+
+
+def _get_korean_font(size: int) -> ImageFont.ImageFont:
+    font = _FONT_CACHE.get(size)
+    if font is not None:
+        return font
+    for candidate in _KOREAN_FONT_CANDIDATES:
+        if Path(candidate).exists():
+            font = ImageFont.truetype(candidate, size)
+            break
+    else:
+        font = ImageFont.load_default()
+    _FONT_CACHE[size] = font
+    return font
 
 HAND_POSE_LABELS = ["open", "closed"]
 LABEL_DISPLAY_KO = {"open": "펴짐", "closed": "접힘"}
@@ -130,23 +154,18 @@ def draw_text_panel(
         return
 
     x, y = origin
-    width = max(260, max(len(line) for line in lines) * 10 + 24)
+    width = max(260, max(len(line) for line in lines) * 20 + 24)
     height = line_height * len(lines) + 16
     overlay = frame.copy()
     cv2.rectangle(overlay, (x - 8, y - 24), (x - 8 + width, y - 24 + height), (0, 0, 0), -1)
     cv2.addWeighted(overlay, 0.55, frame, 0.45, 0.0, frame)
 
+    image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(image)
+    font = _get_korean_font(20)
     for idx, line in enumerate(lines):
-        cv2.putText(
-            frame,
-            line,
-            (x, y + idx * line_height),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.62,
-            (255, 255, 255),
-            2,
-            cv2.LINE_AA,
-        )
+        draw.text((x, y + idx * line_height - 20), line, font=font, fill=(255, 255, 255))
+    frame[:] = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
 
 def resize_for_display(frame: np.ndarray, display_width: int) -> np.ndarray:

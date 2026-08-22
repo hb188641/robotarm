@@ -1,11 +1,15 @@
+import json
 import math
 
 from teleop_common import (
     EmaFilter,
+    MotorCalibration,
     Point3,
     compute_elbow_flex_deg,
     compute_shoulder_lift_deg,
     compute_yaw_deg,
+    load_calibration,
+    save_calibration,
 )
 
 
@@ -71,3 +75,41 @@ def test_ema_reset_clears_state():
     f.update(10.0)
     f.reset()
     assert f.update(5.0) == 5.0
+
+
+def test_human_deg_to_raw_linear_interpolation():
+    cal = MotorCalibration(human_deg_a=0.0, raw_a=2048, human_deg_b=90.0, raw_b=3000)
+    assert cal.human_deg_to_raw(45.0) == round(2048 + (3000 - 2048) * 0.5)
+
+
+def test_human_deg_to_raw_clamps_below_range():
+    cal = MotorCalibration(human_deg_a=0.0, raw_a=2048, human_deg_b=90.0, raw_b=3000)
+    assert cal.human_deg_to_raw(-100.0) == 2048
+
+
+def test_human_deg_to_raw_clamps_above_range():
+    cal = MotorCalibration(human_deg_a=0.0, raw_a=2048, human_deg_b=90.0, raw_b=3000)
+    assert cal.human_deg_to_raw(999.0) == 3000
+
+
+def test_human_deg_to_raw_works_when_raw_b_less_than_raw_a():
+    cal = MotorCalibration(human_deg_a=0.0, raw_a=3000, human_deg_b=90.0, raw_b=2048)
+    assert cal.human_deg_to_raw(0.0) == 3000
+    assert cal.human_deg_to_raw(90.0) == 2048
+    # deg=999는 deg_b(90) 방향으로 더 간 값이라 raw_b 쪽 극단(2048)으로 클램프됨
+    assert cal.human_deg_to_raw(999.0) == 2048
+
+
+def test_save_and_load_calibration_roundtrip(tmp_path):
+    calibration = {
+        "motor_1": MotorCalibration(human_deg_a=0.0, raw_a=2048, human_deg_b=30.0, raw_b=2900, yaw_zero=1.5),
+        "motor_2": MotorCalibration(human_deg_a=10.0, raw_a=1200, human_deg_b=150.0, raw_b=3400),
+    }
+    path = tmp_path / "calibration.json"
+    save_calibration(path, calibration)
+
+    loaded = load_calibration(path)
+
+    assert loaded["motor_1"] == calibration["motor_1"]
+    assert loaded["motor_2"] == calibration["motor_2"]
+    assert json.loads(path.read_text(encoding="utf-8"))["motor_1"]["yaw_zero"] == 1.5

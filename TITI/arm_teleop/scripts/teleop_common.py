@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import math
-from dataclasses import dataclass
-from typing import Optional, Tuple
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Dict, Optional, Tuple
 
 LEFT_SHOULDER_IDX = 11
 RIGHT_SHOULDER_IDX = 12
@@ -65,3 +67,30 @@ class EmaFilter:
 
     def reset(self) -> None:
         self._value = None
+
+
+@dataclass
+class MotorCalibration:
+    human_deg_a: float
+    raw_a: int
+    human_deg_b: float
+    raw_b: int
+    yaw_zero: float = 0.0
+
+    def human_deg_to_raw(self, human_deg: float) -> int:
+        if self.human_deg_b == self.human_deg_a:
+            raise ValueError("human_deg_a and human_deg_b must differ")
+        slope = (self.raw_b - self.raw_a) / (self.human_deg_b - self.human_deg_a)
+        raw = self.raw_a + slope * (human_deg - self.human_deg_a)
+        lo, hi = sorted((self.raw_a, self.raw_b))
+        return int(round(min(max(raw, lo), hi)))
+
+
+def load_calibration(path: Path) -> Dict[str, MotorCalibration]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return {motor: MotorCalibration(**values) for motor, values in data.items()}
+
+
+def save_calibration(path: Path, calibration: Dict[str, MotorCalibration]) -> None:
+    payload = {motor: asdict(cal) for motor, cal in calibration.items()}
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

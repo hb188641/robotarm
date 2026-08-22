@@ -1,0 +1,5 @@
+{
+  "motor_1": {"human_deg_a": 0.0, "raw_a": 2048, "human_deg_b": 30.0, "raw_b": 2900, "yaw_zero": 0.0},
+  "motor_2": {"human_deg_a": 10.0, "raw_a": 1200, "human_deg_b": 150.0, "raw_b": 3400, "yaw_zero": 0.0},
+  "motor_3": {"human_deg_a": 5.0, "raw_a": 2048, "human_deg_b": 140.0, "raw_b": 3100, "yaw_zero": 0.0}
+}

@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(curl -s \"https://raw.githubusercontent.com/huggingface/lerobot/main/docs/source/integrate_hardware.mdx\")",
-      "Bash(curl -s \"https://raw.githubusercontent.com/huggingface/lerobot/main/src/lerobot/motors/feetech/tables.py\")"
+      "Bash(curl -s \"https://raw.githubusercontent.com/huggingface/lerobot/main/src/lerobot/motors/feetech/tables.py\")",
+      "Bash(python3 -m pip list)"
     ]
   }
 }

@@ -1,0 +1,5 @@
+# Default environment: REST server, pose labs and teleoperation.
+-r TITI/robot_arm_app/requirements.txt
+-r TITI/hand_pose_lab/requirements.txt
+-r TITI/arm_pose_lab/requirements.txt
+-r TITI/arm_teleop/requirements.txt

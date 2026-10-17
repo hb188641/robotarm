@@ -23,16 +23,24 @@ bus = FeetechMotorsBus(
     },
 )
 
-bus.connect()
-print("Connected to 6 motors")
 
-try:
-    while True:
-        positions = bus.sync_read("Present_Position", normalize=False)
-        pos_str = " | ".join(f"{m}: {positions[m]:.0f}" for m in [f"motor_{i}" for i in range(1, 7)])
-        print(pos_str)
-        time.sleep(0.1)
-except KeyboardInterrupt:
-    print("\nStopped")
-finally:
-    bus.disconnect()
+def main() -> None:
+    bus.connect()
+    print("Connected to 6 motors")
+
+    try:
+        while True:
+            positions = bus.sync_read("Present_Position", normalize=False)
+            pos_str = " | ".join(
+                f"{m}: {positions[m]:.0f}" for m in [f"motor_{i}" for i in range(1, 7)]
+            )
+            print(pos_str)
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        print("\nStopped")
+    finally:
+        bus.disconnect()
+
+
+if __name__ == "__main__":
+    main()

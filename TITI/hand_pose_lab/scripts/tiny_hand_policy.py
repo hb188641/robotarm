@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 from typing import Dict, Tuple
 
 import torch
 from torch import nn
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from common.device import select_device as select_device
 
 
 class HandPoseClassifier(nn.Module):
@@ -22,18 +26,14 @@ class HandPoseClassifier(nn.Module):
         return self.net(features)
 
 
-def select_device() -> torch.device:
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    return torch.device("cpu")
-
-
-def load_policy_checkpoint(path: Path, device: torch.device) -> Tuple[HandPoseClassifier, Dict]:
+def load_policy_checkpoint(
+    path: Path, device: torch.device
+) -> Tuple[HandPoseClassifier, Dict]:
     checkpoint = torch.load(path, map_location=device)
     labels = checkpoint["label_names"]
-    model = HandPoseClassifier(input_dim=checkpoint.get("input_dim", 63), num_classes=len(labels))
+    model = HandPoseClassifier(
+        input_dim=checkpoint.get("input_dim", 63), num_classes=len(labels)
+    )
     model.load_state_dict(checkpoint["model_state"])
     model.to(device)
     model.eval()

@@ -16,7 +16,9 @@ from lerobot.motors.feetech import FeetechMotorsBus
 
 PORT = "COM4"
 MOTOR_ID = 15
-MOTOR_MODEL = "sts3215"  # 원본 제어 테이블 주소(40/42/56)와 baudrate(1e6)가 STS/SMS 시리즈와 일치
+MOTOR_MODEL = (
+    "sts3215"  # 원본 제어 테이블 주소(40/42/56)와 baudrate(1e6)가 STS/SMS 시리즈와 일치
+)
 
 bus = FeetechMotorsBus(
     port=PORT,
@@ -35,23 +37,28 @@ def read_position(bus: FeetechMotorsBus, motor: str) -> int:
     return bus.read("Present_Position", motor, normalize=False)
 
 
-bus.connect()
-print("Connected")
-print("PORT = ", PORT)
+def main() -> None:
+    bus.connect()
+    print("Connected")
+    print("PORT = ", PORT)
 
-motor = "motor_1"
-start = 865
+    motor = "motor_1"
+    start = 865
 
-try:
-    write_position(bus, motor, start)
-    bus.enable_torque(motor)
-    while True:
-        write_position(bus, motor, start + 30)
-        start = start + 1
-        time.sleep(0.001)
-        print(read_position(bus, motor))
-finally:
-    bus.disable_torque(motor)
-    print("done!")
-    bus.disconnect()
-    print("Closed")
+    try:
+        write_position(bus, motor, start)
+        bus.enable_torque(motor)
+        while True:
+            write_position(bus, motor, start + 30)
+            start = start + 1
+            time.sleep(0.001)
+            print(read_position(bus, motor))
+    finally:
+        bus.disable_torque(motor)
+        print("done!")
+        bus.disconnect()
+        print("Closed")
+
+
+if __name__ == "__main__":
+    main()

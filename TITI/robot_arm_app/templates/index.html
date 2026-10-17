@@ -288,7 +288,6 @@ function drawGripper(hand, angleDeg) {
   const openRatio = clamp((pos.motor_6 - GRIP_CLOSED) / (GRIP_OPEN - GRIP_CLOSED), 0, 1);
   const spread = 8 + openRatio * 26; // degrees each jaw opens from center line
   const jawLen = 34;
-  const a = angleDeg * DEG2RAD;
 
   function jawPath(sideDeg) {
     const jawAngle = (angleDeg + sideDeg) * DEG2RAD;

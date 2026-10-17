@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import shutil
 import time
 from pathlib import Path
@@ -27,47 +26,41 @@ from hand_common import (
     write_json,
 )
 
+from common.data import load_counts as _load_counts, append_row as _append_row
+
 LANDMARK_COLUMNS = [f"{axis}{i}" for i in range(21) for axis in ("x", "y", "z")]
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="카메라로 손 랜드마크를 라벨링해서 펴짐/접힘 데이터셋을 수집.")
+    parser = argparse.ArgumentParser(
+        description="카메라로 손 랜드마크를 라벨링해서 펴짐/접힘 데이터셋을 수집."
+    )
     parser.add_argument("--camera", type=int, default=0, help="카메라 인덱스.")
-    parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_DIR, help="데이터셋 디렉터리.")
-    parser.add_argument("--model", type=Path, default=HAND_LANDMARKER_MODEL_PATH, help="hand_landmarker.task 경로.")
+    parser.add_argument(
+        "--dataset", type=Path, default=DEFAULT_DATASET_DIR, help="데이터셋 디렉터리."
+    )
+    parser.add_argument(
+        "--model",
+        type=Path,
+        default=HAND_LANDMARKER_MODEL_PATH,
+        help="hand_landmarker.task 경로.",
+    )
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--fps", type=int, default=30)
     parser.add_argument("--display-width", type=int, default=1280)
-    parser.add_argument("--append", action="store_true", help="기존 데이터셋에 이어서 수집.")
+    parser.add_argument(
+        "--append", action="store_true", help="기존 데이터셋에 이어서 수집."
+    )
     return parser.parse_args()
 
 
 def load_counts(labels_path: Path) -> Dict[str, int]:
-    counts = {label: 0 for label in HAND_POSE_LABELS}
-    if not labels_path.exists():
-        return counts
-
-    with labels_path.open("r", newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            label = row.get("label")
-            if label in counts:
-                counts[label] += 1
-    return counts
+    return _load_counts(labels_path, HAND_POSE_LABELS)
 
 
 def append_row(labels_path: Path, label: str, vector, timestamp: float) -> None:
-    exists = labels_path.exists()
-    fieldnames = ["label", *LANDMARK_COLUMNS, "timestamp"]
-    row = {"label": label, "timestamp": f"{timestamp:.6f}"}
-    row.update({col: f"{value:.6f}" for col, value in zip(LANDMARK_COLUMNS, vector)})
-
-    with labels_path.open("a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        if not exists:
-            writer.writeheader()
-        writer.writerow(row)
+    _append_row(labels_path, label, vector, timestamp, LANDMARK_COLUMNS)
 
 
 def main() -> None:
@@ -77,7 +70,9 @@ def main() -> None:
     if args.dataset.exists() and not args.append:
         shutil.rmtree(args.dataset)
 
-    collection_mode = "append existing dataset" if args.append else "new dataset (reset)"
+    collection_mode = (
+        "append existing dataset" if args.append else "new dataset (reset)"
+    )
     dataset_dir = ensure_dir(args.dataset)
     labels_path = dataset_dir / "landmarks.csv"
     metadata_path = dataset_dir / "metadata.json"
@@ -117,7 +112,9 @@ def main() -> None:
                 if hand is not None:
                     draw_hand(display, hand)
 
-                count_line = " ".join(f"{label}:{counts[label]}" for label in HAND_POSE_LABELS)
+                count_line = " ".join(
+                    f"{label}:{counts[label]}" for label in HAND_POSE_LABELS
+                )
                 draw_text_panel(
                     display,
                     [

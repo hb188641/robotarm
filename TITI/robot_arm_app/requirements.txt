@@ -1,5 +1,4 @@
 flask>=3.1.0
 requests>=2.32.0
+# The feetech extra includes feetech-servo-sdk, pyserial and deepdiff.
 lerobot[feetech]>=0.6.0
-feetech-servo-sdk>=1.0.0
-deepdiff>=8.6.0

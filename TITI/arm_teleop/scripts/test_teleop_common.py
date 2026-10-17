@@ -103,8 +103,12 @@ def test_human_deg_to_raw_works_when_raw_b_less_than_raw_a():
 
 def test_save_and_load_calibration_roundtrip(tmp_path):
     calibration = {
-        "motor_1": MotorCalibration(human_deg_a=0.0, raw_a=2048, human_deg_b=30.0, raw_b=2900, yaw_zero=1.5),
-        "motor_2": MotorCalibration(human_deg_a=10.0, raw_a=1200, human_deg_b=150.0, raw_b=3400),
+        "motor_1": MotorCalibration(
+            human_deg_a=0.0, raw_a=2048, human_deg_b=30.0, raw_b=2900, yaw_zero=1.5
+        ),
+        "motor_2": MotorCalibration(
+            human_deg_a=10.0, raw_a=1200, human_deg_b=150.0, raw_b=3400
+        ),
     }
     path = tmp_path / "calibration.json"
     save_calibration(path, calibration)

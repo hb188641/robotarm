@@ -37,13 +37,15 @@ bus_lock = threading.Lock()
 def connect_bus() -> None:
     with bus_lock:
         bus.connect()
-        time.sleep(0.2)  # 포트를 연 직후 버스가 안정화될 시간을 줌 (원본 motorControl.py와 동일한 지연)
+        time.sleep(
+            0.2
+        )  # 포트를 연 직후 버스가 안정화될 시간을 줌 (원본 motorControl.py와 동일한 지연)
         bus.enable_torque(num_retry=3)
 
 
 @app.route("/")
 def index():
-    return render_template("index.html", motor_names=MOTOR_NAMES)
+    return render_template("index.html")
 
 
 @app.route("/api/state")

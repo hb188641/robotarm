@@ -80,7 +80,9 @@ class 로봇팔:
         clamped = {m: int(min(max(p, 0), RAW_MAX)) for m, p in targets.items()}
         self._전송("/api/motors/goal", clamped)
 
-    def 도달할때까지대기(self, motor: str, target: int, tolerance: int = 20, timeout: float = 5.0) -> bool:
+    def 도달할때까지대기(
+        self, motor: str, target: int, tolerance: int = 20, timeout: float = 5.0
+    ) -> bool:
         """모터가 목표 위치 근처(오차범위 tolerance)에 도달할 때까지 대기. 도달하면 True, 타임아웃되면 False."""
         deadline = time.time() + timeout
         while time.time() < deadline:
@@ -110,7 +112,9 @@ class 로봇팔:
     @staticmethod
     def _모터확인(motor: str) -> None:
         if motor not in MOTOR_NAMES:
-            raise ValueError(f"알 수 없는 모터 '{motor}', 다음 중 하나여야 함: {MOTOR_NAMES}")
+            raise ValueError(
+                f"알 수 없는 모터 '{motor}', 다음 중 하나여야 함: {MOTOR_NAMES}"
+            )
 
     @staticmethod
     def _raw를각도로(raw: int) -> float:

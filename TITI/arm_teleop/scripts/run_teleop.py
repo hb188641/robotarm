@@ -23,7 +23,9 @@ from teleop_common import (
     load_calibration,
 )
 
-ARM_POSE_LAB_SCRIPTS = Path(__file__).resolve().parent.parent.parent / "arm_pose_lab" / "scripts"
+ARM_POSE_LAB_SCRIPTS = (
+    Path(__file__).resolve().parent.parent.parent / "arm_pose_lab" / "scripts"
+)
 sys.path.append(str(ARM_POSE_LAB_SCRIPTS))
 from pose_common import (  # noqa: E402
     create_pose_landmarker,
@@ -42,27 +44,40 @@ CALIBRATION_PATH = Path(__file__).resolve().parent.parent / "calibration.json"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="pose landmark로 motor_1~3 실시간 텔레옵.")
+    parser = argparse.ArgumentParser(
+        description="pose landmark로 motor_1~3 실시간 텔레옵."
+    )
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--fps", type=int, default=30)
     parser.add_argument("--display-width", type=int, default=1280)
-    parser.add_argument("--alpha", type=float, default=0.3, help="EMA 스무딩 계수 (0~1, 클수록 반응 빠르고 떨림 큼)")
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.3,
+        help="EMA 스무딩 계수 (0~1, 클수록 반응 빠르고 떨림 큼)",
+    )
     parser.add_argument(
         "--max-raw-delta",
         type=int,
         default=15,
         help="프레임당 raw tick 최대 변화량(속도 제한). 작을수록 느리고 안전함 (기본 15 ≈ 초당 최대 약 26~45도)",
     )
-    parser.add_argument("--dry-run", action="store_true", help="계산된 raw 값만 출력하고 실제 모터에는 보내지 않음")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="계산된 raw 값만 출력하고 실제 모터에는 보내지 않음",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     if not CALIBRATION_PATH.exists():
-        raise FileNotFoundError(f"캘리브레이션 파일이 없습니다: {CALIBRATION_PATH}. 먼저 calibrate.py를 실행하세요.")
+        raise FileNotFoundError(
+            f"캘리브레이션 파일이 없습니다: {CALIBRATION_PATH}. 먼저 calibrate.py를 실행하세요."
+        )
     calibration = load_calibration(CALIBRATION_PATH)
 
     motor_names = ("motor_1", "motor_2", "motor_3")
@@ -98,13 +113,36 @@ def main() -> None:
                 if pose is not None:
                     draw_pose(display, pose)
 
-                    left_shoulder = Point3(pose[LEFT_SHOULDER_IDX].x, pose[LEFT_SHOULDER_IDX].y, pose[LEFT_SHOULDER_IDX].z)
-                    shoulder = Point3(pose[RIGHT_SHOULDER_IDX].x, pose[RIGHT_SHOULDER_IDX].y, pose[RIGHT_SHOULDER_IDX].z)
-                    elbow = Point3(pose[RIGHT_ELBOW_IDX].x, pose[RIGHT_ELBOW_IDX].y, pose[RIGHT_ELBOW_IDX].z)
-                    wrist = Point3(pose[RIGHT_WRIST_IDX].x, pose[RIGHT_WRIST_IDX].y, pose[RIGHT_WRIST_IDX].z)
-                    hip = Point3(pose[RIGHT_HIP_IDX].x, pose[RIGHT_HIP_IDX].y, pose[RIGHT_HIP_IDX].z)
+                    left_shoulder = Point3(
+                        pose[LEFT_SHOULDER_IDX].x,
+                        pose[LEFT_SHOULDER_IDX].y,
+                        pose[LEFT_SHOULDER_IDX].z,
+                    )
+                    shoulder = Point3(
+                        pose[RIGHT_SHOULDER_IDX].x,
+                        pose[RIGHT_SHOULDER_IDX].y,
+                        pose[RIGHT_SHOULDER_IDX].z,
+                    )
+                    elbow = Point3(
+                        pose[RIGHT_ELBOW_IDX].x,
+                        pose[RIGHT_ELBOW_IDX].y,
+                        pose[RIGHT_ELBOW_IDX].z,
+                    )
+                    wrist = Point3(
+                        pose[RIGHT_WRIST_IDX].x,
+                        pose[RIGHT_WRIST_IDX].y,
+                        pose[RIGHT_WRIST_IDX].z,
+                    )
+                    hip = Point3(
+                        pose[RIGHT_HIP_IDX].x,
+                        pose[RIGHT_HIP_IDX].y,
+                        pose[RIGHT_HIP_IDX].z,
+                    )
 
-                    raw_yaw = compute_yaw_deg(left_shoulder, shoulder) - calibration["motor_1"].yaw_zero
+                    raw_yaw = (
+                        compute_yaw_deg(left_shoulder, shoulder)
+                        - calibration["motor_1"].yaw_zero
+                    )
                     raw_shoulder = compute_shoulder_lift_deg(shoulder, elbow, hip)
                     raw_elbow = compute_elbow_flex_deg(shoulder, elbow, wrist)
 
@@ -117,7 +155,9 @@ def main() -> None:
                     targets = {}
                     for motor, deg in smoothed.items():
                         desired_raw = calibration[motor].human_deg_to_raw(deg)
-                        limited_raw = clamp_step(last_raw[motor], desired_raw, args.max_raw_delta)
+                        limited_raw = clamp_step(
+                            last_raw[motor], desired_raw, args.max_raw_delta
+                        )
                         last_raw[motor] = limited_raw
                         targets[motor] = limited_raw
 

@@ -22,7 +22,9 @@ from teleop_common import (
     save_calibration,
 )
 
-ARM_POSE_LAB_SCRIPTS = Path(__file__).resolve().parent.parent.parent / "arm_pose_lab" / "scripts"
+ARM_POSE_LAB_SCRIPTS = (
+    Path(__file__).resolve().parent.parent.parent / "arm_pose_lab" / "scripts"
+)
 sys.path.append(str(ARM_POSE_LAB_SCRIPTS))
 from pose_common import (  # noqa: E402
     create_pose_landmarker,
@@ -51,10 +53,20 @@ class CalibrationCancelled(Exception):
 
 
 def _human_angles(pose) -> dict:
-    left_shoulder = Point3(pose[LEFT_SHOULDER_IDX].x, pose[LEFT_SHOULDER_IDX].y, pose[LEFT_SHOULDER_IDX].z)
-    shoulder = Point3(pose[RIGHT_SHOULDER_IDX].x, pose[RIGHT_SHOULDER_IDX].y, pose[RIGHT_SHOULDER_IDX].z)
-    elbow = Point3(pose[RIGHT_ELBOW_IDX].x, pose[RIGHT_ELBOW_IDX].y, pose[RIGHT_ELBOW_IDX].z)
-    wrist = Point3(pose[RIGHT_WRIST_IDX].x, pose[RIGHT_WRIST_IDX].y, pose[RIGHT_WRIST_IDX].z)
+    left_shoulder = Point3(
+        pose[LEFT_SHOULDER_IDX].x, pose[LEFT_SHOULDER_IDX].y, pose[LEFT_SHOULDER_IDX].z
+    )
+    shoulder = Point3(
+        pose[RIGHT_SHOULDER_IDX].x,
+        pose[RIGHT_SHOULDER_IDX].y,
+        pose[RIGHT_SHOULDER_IDX].z,
+    )
+    elbow = Point3(
+        pose[RIGHT_ELBOW_IDX].x, pose[RIGHT_ELBOW_IDX].y, pose[RIGHT_ELBOW_IDX].z
+    )
+    wrist = Point3(
+        pose[RIGHT_WRIST_IDX].x, pose[RIGHT_WRIST_IDX].y, pose[RIGHT_WRIST_IDX].z
+    )
     hip = Point3(pose[RIGHT_HIP_IDX].x, pose[RIGHT_HIP_IDX].y, pose[RIGHT_HIP_IDX].z)
     return {
         "motor_1": compute_yaw_deg(left_shoulder, shoulder),
@@ -109,34 +121,53 @@ def main() -> None:
 
     cap = open_camera(args.camera, 1280, 720, 30)
     result: dict = {}
-    print("각 단계마다: 사람과 로봇팔을 동시에 해당 자세로 맞춘 뒤, 카메라 창에서 스페이스바를 누르세요.")
+    print(
+        "각 단계마다: 사람과 로봇팔을 동시에 해당 자세로 맞춘 뒤, 카메라 창에서 스페이스바를 누르세요."
+    )
     try:
         with create_pose_landmarker() as detector:
             for motor in STEPS:
                 angles = _live_capture(
-                    cap, detector, args.display_width, f"[{motor}] 첫 번째 기준 자세로 맞추세요"
+                    cap,
+                    detector,
+                    args.display_width,
+                    f"[{motor}] 첫 번째 기준 자세로 맞추세요",
                 )
                 deg_a = angles[motor]
                 raw_a = arm.위치(motor)
-                print(f"  [{motor}] 첫 번째 자세 기록: human_deg={deg_a:.1f}, raw={raw_a}")
+                print(
+                    f"  [{motor}] 첫 번째 자세 기록: human_deg={deg_a:.1f}, raw={raw_a}"
+                )
 
                 angles = _live_capture(
-                    cap, detector, args.display_width, f"[{motor}] 두 번째 기준 자세로 맞추세요"
+                    cap,
+                    detector,
+                    args.display_width,
+                    f"[{motor}] 두 번째 기준 자세로 맞추세요",
                 )
                 deg_b = angles[motor]
                 raw_b = arm.위치(motor)
-                print(f"  [{motor}] 두 번째 자세 기록: human_deg={deg_b:.1f}, raw={raw_b}")
+                print(
+                    f"  [{motor}] 두 번째 자세 기록: human_deg={deg_b:.1f}, raw={raw_b}"
+                )
 
                 yaw_zero = 0.0
                 if motor == "motor_1":
                     angles = _live_capture(
-                        cap, detector, args.display_width, "[motor_1] 카메라를 정면으로 보고 서세요 (yaw 0점 기준)"
+                        cap,
+                        detector,
+                        args.display_width,
+                        "[motor_1] 카메라를 정면으로 보고 서세요 (yaw 0점 기준)",
                     )
                     yaw_zero = angles[motor]
                     print(f"  [motor_1] yaw 0점 기록: {yaw_zero:.1f}")
 
                 result[motor] = MotorCalibration(
-                    human_deg_a=deg_a, raw_a=raw_a, human_deg_b=deg_b, raw_b=raw_b, yaw_zero=yaw_zero
+                    human_deg_a=deg_a,
+                    raw_a=raw_a,
+                    human_deg_b=deg_b,
+                    raw_b=raw_b,
+                    yaw_zero=yaw_zero,
                 )
     except CalibrationCancelled:
         print("\nESC로 취소되어 calibration.json을 저장하지 않았습니다.")

@@ -62,90 +62,123 @@ def clamp(pos: float) -> float:
     return min(max(pos, 0), 4095)
 
 
-bus.connect()
-print("Connected")
-bus.enable_torque()
+def main() -> None:
+    bus.connect()
+    print("Connected")
+    bus.enable_torque()
 
-positions = bus.sync_read("Present_Position", normalize=False)
-grab_active = False
-g_was_pressed = False
+    positions = bus.sync_read("Present_Position", normalize=False)
+    grab_active = False
+    g_was_pressed = False
 
-try:
-    while True:
-        right = keyboard.is_pressed("right")
-        left = keyboard.is_pressed("left")
-        up = keyboard.is_pressed("up")
-        down = keyboard.is_pressed("down")
-        g_pressed = keyboard.is_pressed("g")
+    try:
+        while True:
+            right = keyboard.is_pressed("right")
+            left = keyboard.is_pressed("left")
+            up = keyboard.is_pressed("up")
+            down = keyboard.is_pressed("down")
+            g_pressed = keyboard.is_pressed("g")
 
-        # G: 토글 (누르는 순간의 edge에서만 상태 전환)
-        if g_pressed and not g_was_pressed:
-            grab_active = not grab_active
-            positions["motor_6"] = GRAB_ACTIVATE_POSITION if grab_active else GRAB_RELEASE_POSITION
-            bus.write("Goal_Position", "motor_6", positions["motor_6"], normalize=False)
-        g_was_pressed = g_pressed
+            # G: 토글 (누르는 순간의 edge에서만 상태 전환)
+            if g_pressed and not g_was_pressed:
+                grab_active = not grab_active
+                positions["motor_6"] = (
+                    GRAB_ACTIVATE_POSITION if grab_active else GRAB_RELEASE_POSITION
+                )
+                bus.write(
+                    "Goal_Position", "motor_6", positions["motor_6"], normalize=False
+                )
+            g_was_pressed = g_pressed
 
-        # 좌우: motor_1 단독 이동
-        if right or left:
-            delta = STEP if right else -STEP
-            positions["motor_1"] = clamp(positions["motor_1"] + delta)
-            bus.write("Goal_Position", "motor_1", positions["motor_1"], normalize=False)
-
-        # 위: 기본은 motor_2 증가 + motor_3/4 감소를 동시에 적용.
-        # 단, motor_3 + motor_4 합이 임계값(4500)을 넘으면 순서가 바뀜:
-        #   1) motor_2를 1000까지 감소
-        #   2) motor_2가 1000에 도달하면 그때부터 motor_3/4를 감소
-        if up:
-            if positions["motor_3"] + positions["motor_4"] > SUM_THRESHOLD:
-                if positions["motor_2"] > MOTOR_2_LOWER:
-                    positions["motor_2"] = max(positions["motor_2"] - STEP, MOTOR_2_LOWER)
-                    bus.write("Goal_Position", "motor_2", positions["motor_2"], normalize=False)
-                else:
-                    positions["motor_3"] = max(positions["motor_3"] - STEP, MOTOR_3_THRESHOLD)
-                    positions["motor_4"] = max(positions["motor_4"] - STEP, MOTOR_4_THRESHOLD)
-                    bus.sync_write(
-                        "Goal_Position",
-                        {"motor_3": positions["motor_3"], "motor_4": positions["motor_4"]},
-                        normalize=False,
-                    )
-            else:
-                positions["motor_2"] = min(positions["motor_2"] + STEP, MOTOR_2_THRESHOLD)
-                positions["motor_3"] = max(positions["motor_3"] - STEP, MOTOR_3_THRESHOLD)
-                positions["motor_4"] = max(positions["motor_4"] - STEP, MOTOR_4_THRESHOLD)
-                bus.sync_write(
-                    "Goal_Position",
-                    {
-                        "motor_2": positions["motor_2"],
-                        "motor_3": positions["motor_3"],
-                        "motor_4": positions["motor_4"],
-                    },
-                    normalize=False,
+            # 좌우: motor_1 단독 이동
+            if right or left:
+                delta = STEP if right else -STEP
+                positions["motor_1"] = clamp(positions["motor_1"] + delta)
+                bus.write(
+                    "Goal_Position", "motor_1", positions["motor_1"], normalize=False
                 )
 
-        # 아래: motor_3/4는 조건 없이 증가. motor_2는 motor_3와 motor_4가 모두
-        # 임계점에 도달했을 때만 감소 가능
-        if down:
-            changed = {}
+            # 위: 기본은 motor_2 증가 + motor_3/4 감소를 동시에 적용.
+            # 단, motor_3 + motor_4 합이 임계값(4500)을 넘으면 순서가 바뀜:
+            #   1) motor_2를 1000까지 감소
+            #   2) motor_2가 1000에 도달하면 그때부터 motor_3/4를 감소
+            if up:
+                if positions["motor_3"] + positions["motor_4"] > SUM_THRESHOLD:
+                    if positions["motor_2"] > MOTOR_2_LOWER:
+                        positions["motor_2"] = max(
+                            positions["motor_2"] - STEP, MOTOR_2_LOWER
+                        )
+                        bus.write(
+                            "Goal_Position",
+                            "motor_2",
+                            positions["motor_2"],
+                            normalize=False,
+                        )
+                    else:
+                        positions["motor_3"] = max(
+                            positions["motor_3"] - STEP, MOTOR_3_THRESHOLD
+                        )
+                        positions["motor_4"] = max(
+                            positions["motor_4"] - STEP, MOTOR_4_THRESHOLD
+                        )
+                        bus.sync_write(
+                            "Goal_Position",
+                            {
+                                "motor_3": positions["motor_3"],
+                                "motor_4": positions["motor_4"],
+                            },
+                            normalize=False,
+                        )
+                else:
+                    positions["motor_2"] = min(
+                        positions["motor_2"] + STEP, MOTOR_2_THRESHOLD
+                    )
+                    positions["motor_3"] = max(
+                        positions["motor_3"] - STEP, MOTOR_3_THRESHOLD
+                    )
+                    positions["motor_4"] = max(
+                        positions["motor_4"] - STEP, MOTOR_4_THRESHOLD
+                    )
+                    bus.sync_write(
+                        "Goal_Position",
+                        {
+                            "motor_2": positions["motor_2"],
+                            "motor_3": positions["motor_3"],
+                            "motor_4": positions["motor_4"],
+                        },
+                        normalize=False,
+                    )
 
-            positions["motor_3"] = clamp(positions["motor_3"] + STEP)
-            changed["motor_3"] = positions["motor_3"]
+            # 아래: motor_3/4는 조건 없이 증가. motor_2는 motor_3와 motor_4가 모두
+            # 임계점에 도달했을 때만 감소 가능
+            if down:
+                changed = {}
 
-            positions["motor_4"] = clamp(positions["motor_4"] + STEP)
-            changed["motor_4"] = positions["motor_4"]
+                positions["motor_3"] = clamp(positions["motor_3"] + STEP)
+                changed["motor_3"] = positions["motor_3"]
 
-            if positions["motor_3"] <= MOTOR_3_THRESHOLD and positions["motor_4"] <= MOTOR_4_THRESHOLD:
-                positions["motor_2"] = clamp(positions["motor_2"] - STEP)
-                changed["motor_2"] = positions["motor_2"]
+                positions["motor_4"] = clamp(positions["motor_4"] + STEP)
+                changed["motor_4"] = positions["motor_4"]
 
-            bus.sync_write("Goal_Position", changed, normalize=False)
+                if (
+                    positions["motor_3"] <= MOTOR_3_THRESHOLD
+                    and positions["motor_4"] <= MOTOR_4_THRESHOLD
+                ):
+                    positions["motor_2"] = clamp(positions["motor_2"] - STEP)
+                    changed["motor_2"] = positions["motor_2"]
 
-        time.sleep(TICK_INTERVAL)
-except KeyboardInterrupt:
-    print("\nStopped")
-except ConnectionError:
-    print("Motor had over-torqued")
-finally:
-    bus.disable_torque()
-    bus.disconnect()
-    print("Closed")
+                bus.sync_write("Goal_Position", changed, normalize=False)
 
+            time.sleep(TICK_INTERVAL)
+    except KeyboardInterrupt:
+        print("\nStopped")
+    except ConnectionError:
+        print("Motor had over-torqued")
+    finally:
+        bus.disable_torque()
+        bus.disconnect()
+        print("Closed")
+
+
+if __name__ == "__main__":
+    main()

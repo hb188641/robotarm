@@ -28,13 +28,16 @@ ROBOT_ARM_APP_DIR = Path(__file__).resolve().parent.parent.parent / "robot_arm_a
 sys.path.append(str(ROBOT_ARM_APP_DIR))
 from 클라이언트 import 로봇팔
 
-CONFIDENCE_THRESHOLD = 0.6  # 이 값보다 확신도가 낮으면 extended/folded 콜백을 호출하지 않음
+CONFIDENCE_THRESHOLD = (
+    0.6  # 이 값보다 확신도가 낮으면 extended/folded 콜백을 호출하지 않음
+)
 
 MOTOR_3_EXTENDED_POSITION = 2048  # 펴짐 판정 시 motor_3 목표
-MOTOR_3_FOLDED_POSITION = 1300  # 접힘 판정 시 motor_3 목표 (arrow_key_control.py의 MOTOR_3_THRESHOLD와 동일)
+MOTOR_3_FOLDED_POSITION = (
+    1300  # 접힘 판정 시 motor_3 목표 (arrow_key_control.py의 MOTOR_3_THRESHOLD와 동일)
+)
 
 팔 = 로봇팔()
-팔.토크켜기()
 
 
 def on_extended() -> None:
@@ -58,10 +61,17 @@ def trigger_callback(label: str) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="학습된 모델로 오른팔 펴짐/접힘을 실시간 추론해서 motor_3를 제어.")
+    parser = argparse.ArgumentParser(
+        description="학습된 모델로 오른팔 펴짐/접힘을 실시간 추론해서 motor_3를 제어."
+    )
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--checkpoint", type=Path, default=DEFAULT_MODEL_PATH)
-    parser.add_argument("--model", type=Path, default=POSE_LANDMARKER_MODEL_PATH, help="pose_landmarker_full.task 경로.")
+    parser.add_argument(
+        "--model",
+        type=Path,
+        default=POSE_LANDMARKER_MODEL_PATH,
+        help="pose_landmarker_full.task 경로.",
+    )
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--fps", type=int, default=30)
@@ -85,6 +95,7 @@ def main() -> None:
     print("q 또는 ESC로 종료")
     with create_pose_landmarker(args.model) as detector:
         try:
+            팔.토크켜기()
             while True:
                 ok, frame = cap.read()
                 if not ok or frame is None:
@@ -109,9 +120,13 @@ def main() -> None:
                         predicted_label = label_names[pred_idx]
                         confidence = float(probs[pred_idx].item())
 
-                    lines.append(f"{LABEL_DISPLAY_KO.get(predicted_label, predicted_label)} ({confidence:.2f})")
+                    lines.append(
+                        f"{LABEL_DISPLAY_KO.get(predicted_label, predicted_label)} ({confidence:.2f})"
+                    )
                     for label, prob in zip(label_names, probs.tolist()):
-                        lines.append(f"{LABEL_DISPLAY_KO.get(label, label)}: {prob:.2f}")
+                        lines.append(
+                            f"{LABEL_DISPLAY_KO.get(label, label)}: {prob:.2f}"
+                        )
 
                     if (
                         confidence >= CONFIDENCE_THRESHOLD

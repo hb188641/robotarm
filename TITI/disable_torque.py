@@ -17,10 +17,16 @@ bus = FeetechMotorsBus(
     },
 )
 
-try:
-    bus.connect()
-    print("Connected")
-    bus.disable_torque("motor_1")
-    print("Torque disabled ✓")
-finally:
-    bus.disconnect()
+
+def main() -> None:
+    try:
+        bus.connect()
+        print("Connected")
+        bus.disable_torque("motor_1")
+        print("Torque disabled ✓")
+    finally:
+        bus.disconnect()
+
+
+if __name__ == "__main__":
+    main()

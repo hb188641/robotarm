@@ -23,6 +23,7 @@ pip install -r requirements.txt
 | `TITI/hand_pose_lab/` | 손 펴짐·접힘 데이터 수집, 학습, 그리퍼 제어 |
 | `TITI/arm_pose_lab/` | 오른팔 펴짐·접힘 데이터 수집, 학습, motor_3 제어 |
 | `TITI/arm_teleop/` | 관절 각도 직접 계산, 캘리브레이션, motor_1~3 연속 제어 |
+| `TITI/voice_motor/` | 로컬 “로봇” 호출어 → OpenAI 음성 인식 → JSON → 번호별 모터 제어 |
 | `TITI/common/` | 카메라·화면 표시, CSV·JSON, 장치 선택, 학습 공통 코드 |
 | `tests/` | 하드웨어 없이 실행하는 포즈 워크플로 회귀 테스트 |
 | `docs/superpowers/` | 기존 텔레옵 설계·구현 기록 |
@@ -52,6 +53,18 @@ python TITI/robot_arm_app/app.py
 Python 클라이언트는 `TITI/robot_arm_app/클라이언트.py`의 `로봇팔` 클래스입니다.
 같은 폴더의 `예시사용.py`에서 사용법을 확인할 수 있습니다. 클라이언트 기본 주소는
 `http://localhost:6000`이며, 다른 서버 주소는 `로봇팔(base_url="...")`로 지정합니다.
+
+## 호출어 기반 음성 모터 제어
+
+```bash
+pip install -r TITI/voice_motor/requirements.txt
+python -m TITI.voice_motor.main --dry-run
+```
+
+“로봇”을 말하고 준비 신호 후 “3번 모터 위치 2200으로 이동”이라고 말합니다.
+호출어는 로컬 모델로 감지하고, OpenAI 모델 2개가 음성 인식과 JSON 변환을 담당합니다.
+기본값은 모터를 움직이지 않는 dry-run입니다. 실제 실행은 실측한 관절 제한 파일과
+`--execute`가 필요합니다. 설치·모델 변경·실행 절차는 [음성 제어 안내](TITI/voice_motor/README.md)를 참고하세요.
 
 ## 손·팔 포즈 수집과 학습
 

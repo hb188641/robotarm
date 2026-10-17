@@ -1,11 +1,17 @@
 """Bounded microphone input and silence-delimited PCM16 recording."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np
+
 from dataclasses import dataclass
 import io
 import math
 import queue
 import wave
-
-import numpy as np
 
 
 class AudioError(Exception):
@@ -24,13 +30,22 @@ class AudioSettings:
 
     def __post_init__(self):
         if self.sample_rate != 16000 or self.block_ms != 30:
-            raise ValueError('오디오는 16000 Hz, 30 ms 프레임을 사용합니다.')
-        for value in (self.silence_s, self.start_timeout_s, self.max_record_s,
-                      self.min_speech_s, self.rms_threshold):
+            raise ValueError("오디오는 16000 Hz, 30 ms 프레임을 사용합니다.")
+        for value in (
+            self.silence_s,
+            self.start_timeout_s,
+            self.max_record_s,
+            self.min_speech_s,
+            self.rms_threshold,
+        ):
             if not math.isfinite(value) or value <= 0:
-                raise ValueError('오디오 설정은 양수여야 합니다.')
-        if self.max_record_s > 30 or self.min_speech_s > self.max_record_s or self.rms_threshold > 1:
-            raise ValueError('오디오 설정 범위가 잘못되었습니다.')
+                raise ValueError("오디오 설정은 양수여야 합니다.")
+        if (
+            self.max_record_s > 30
+            or self.min_speech_s > self.max_record_s
+            or self.rms_threshold > 1
+        ):
+            raise ValueError("오디오 설정 범위가 잘못되었습니다.")
 
     @property
     def block_size(self):
@@ -38,16 +53,20 @@ class AudioSettings:
 
 
 def checked_frame(samples) -> np.ndarray:
+    import numpy as np
+
     frame = np.asarray(samples, dtype=np.float32).reshape(-1)
     if frame.size != 480 or not np.isfinite(frame).all():
-        raise AudioError('마이크 입력 프레임이 올바르지 않습니다.')
+        raise AudioError("마이크 입력 프레임이 올바르지 않습니다.")
     return frame
 
 
 def to_wav(samples: np.ndarray, sample_rate: int = 16000) -> bytes:
-    data = (np.clip(samples, -1, 1) * 32767).astype('<i2').tobytes()
+    import numpy as np
+
+    data = (np.clip(samples, -1, 1) * 32767).astype("<i2").tobytes()
     output = io.BytesIO()
-    with wave.open(output, 'wb') as audio:
+    with wave.open(output, "wb") as audio:
         audio.setnchannels(1)
         audio.setsampwidth(2)
         audio.setframerate(sample_rate)
@@ -56,6 +75,8 @@ def to_wav(samples: np.ndarray, sample_rate: int = 16000) -> bytes:
 
 
 def capture_utterance(read_frame, settings: AudioSettings) -> bytes | None:
+    import numpy as np
+
     recorded = []
     waiting_samples = speech_samples = silent_samples = 0
     recorded_samples = 0
@@ -79,7 +100,10 @@ def capture_utterance(read_frame, settings: AudioSettings) -> bytes | None:
         recorded_samples += frame.size
         speech_samples += frame.size if voiced else 0
         silent_samples = 0 if voiced else silent_samples + frame.size
-        if recorded_samples >= settings.max_record_s * rate or silent_samples >= settings.silence_s * rate:
+        if (
+            recorded_samples >= settings.max_record_s * rate
+            or silent_samples >= settings.silence_s * rate
+        ):
             break
     if speech_samples < settings.min_speech_s * rate:
         return None
@@ -88,9 +112,10 @@ def capture_utterance(read_frame, settings: AudioSettings) -> bytes | None:
 
 class Microphone:
     """The callback never runs inference. Pending audio is capped at 0.5 seconds."""
+
     def __init__(self, device, settings: AudioSettings):
         self.device, self.settings = device, settings
-        self._frames = queue.Queue(maxsize=math.ceil(500/settings.block_ms))
+        self._frames = queue.Queue(maxsize=math.ceil(500 / settings.block_ms))
         self.discontinuities = 0
         self._stream = None
 
@@ -117,16 +142,23 @@ class Microphone:
 
     def __enter__(self):
         import sounddevice as sd
+
         try:
             self._stream = sd.InputStream(
-                samplerate=self.settings.sample_rate, blocksize=self.settings.block_size,
-                channels=1, dtype='float32', device=self.device, callback=self._callback,
+                samplerate=self.settings.sample_rate,
+                blocksize=self.settings.block_size,
+                channels=1,
+                dtype="float32",
+                device=self.device,
+                callback=self._callback,
             )
             self._stream.start()
         except Exception:
             if self._stream is not None:
                 self._stream.close()
-            raise AudioError('마이크를 열 수 없습니다. 장치·권한·16000 Hz 지원을 확인하세요.') from None
+            raise AudioError(
+                "마이크를 열 수 없습니다. 장치·권한·16000 Hz 지원을 확인하세요."
+            ) from None
         return self
 
     def __exit__(self, *args):
@@ -140,7 +172,7 @@ class Microphone:
         try:
             return self._frames.get(timeout=2.0)
         except queue.Empty:
-            raise AudioError('마이크 입력이 중단되었습니다.') from None
+            raise AudioError("마이크 입력이 중단되었습니다.") from None
 
     def flush(self):
         while True:

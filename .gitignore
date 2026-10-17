@@ -1,7 +1,12 @@
-.venv/
+.venv
 __pycache__/
 *.pyc
 TITI/arm_teleop/calibration.json
 .pytest_cache/
 .ruff_cache/
 .DS_Store
+
+# Local credentials and measured voice-control joint limits
+.env
+.env.local
+TITI/voice_motor/limits.json

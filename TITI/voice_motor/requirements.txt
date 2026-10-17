@@ -1,0 +1,7 @@
+# Optional voice-control dependencies; install from the repository root.
+openai>=2,<3
+faster-whisper>=1.1,<2
+sounddevice>=0.5,<1
+python-dotenv>=1,<2
+numpy>=1.26
+requests>=2.32

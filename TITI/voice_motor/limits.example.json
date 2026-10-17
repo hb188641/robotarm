@@ -1,0 +1,8 @@
+{
+  "motor_1": {"min": null, "max": null, "max_delta": null},
+  "motor_2": {"min": null, "max": null, "max_delta": null},
+  "motor_3": {"min": null, "max": null, "max_delta": null},
+  "motor_4": {"min": null, "max": null, "max_delta": null},
+  "motor_5": {"min": null, "max": null, "max_delta": null},
+  "motor_6": {"min": null, "max": null, "max_delta": null}
+}

@@ -105,7 +105,10 @@ def capture_utterance(read_frame, settings: AudioSettings) -> bytes | None:
             or silent_samples >= settings.silence_s * rate
         ):
             break
-    if speech_samples < settings.min_speech_s * rate:
+    if (
+        speech_samples < settings.min_speech_s * rate
+        or silent_samples < settings.silence_s * rate
+    ):
         return None
     return to_wav(np.concatenate(recorded), rate)
 

@@ -50,15 +50,15 @@ python-dotenv, 기존 requests 클라이언트, pytest.
   제한 파일은 motor_1~motor_6 각각 `{min, max, max_delta}` 정수 필드.
   `0 <= min < max <= 4095`, `1 <= max_delta <= 4095`를 검증한다.
 
-- [ ] 실패 테스트: move 1~6개, unknown 빈 목록 허용; 중복, bool/float/str 수치,
+- [x] 실패 테스트: move 1~6개, unknown 빈 목록 허용; 중복, bool/float/str 수치,
   범위 초과, extra 필드, unknown의 targets, move 빈 목록은 ValueError.
   key 우선순위·명시 파일 누락·키 없음·설정 누락·잘못된 제한 파일 검증.
-- [ ] `.venv/bin/python -m pytest tests/test_voice_motor_commands.py tests/test_voice_motor_config.py -q` → FAIL 확인.
-- [ ] 계약 구현. JSON 스키마는 additionalProperties=false, 모든 속성 required.
+- [x] `.venv/bin/python -m pytest tests/test_voice_motor_commands.py tests/test_voice_motor_config.py -q` → FAIL 확인.
+- [x] 계약 구현. JSON 스키마는 additionalProperties=false, 모든 속성 required.
   env 로드는 기존 프로세스 값을 바꾸지 않고 후보별 값을 읽으며 키 값은 로그 금지.
   example 제한은 설명용이며 실제 측정을 대신하지 않는다고 문서화.
-- [ ] 같은 테스트 → PASS.
-- [ ] 해당 파일만 stage하고 `feat: add validated voice motor command and configuration` 커밋.
+- [x] 같은 테스트 → PASS.
+- [x] 해당 파일만 stage하고 `feat: add validated voice motor command and configuration` 커밋.
 
 ### Task 2: OpenAI 두 모델 연결
 
@@ -66,16 +66,16 @@ python-dotenv, 기존 requests 클라이언트, pytest.
 `transcribe(wav: bytes) -> str`; `from_text(text: str) -> Command`;
 `from_audio(wav: bytes) -> tuple[str, Command]`; `IntentError`.
 
-- [ ] 실패 테스트: 가짜 SDK로 audio.transcriptions.create(language="ko") 이후
+- [x] 실패 테스트: 가짜 SDK로 audio.transcriptions.create(language="ko") 이후
   responses.create가 호출되는 순서, 지정된 두 모델, strict JSON schema 확인.
   공백 전사는 두 번째 API 생략. API 오류·refusal·incomplete·불량 JSON은 IntentError.
   “3번 모터”처럼 위치 없는 요청은 unknown을 출력하도록 프롬프트 확인.
-- [ ] `.venv/bin/python -m pytest tests/test_voice_motor_intent.py -q` → FAIL.
-- [ ] 공식 OpenAI 문서의 현재 Python SDK 규격을 확인하고 구현.
+- [x] `.venv/bin/python -m pytest tests/test_voice_motor_intent.py -q` → FAIL.
+- [x] 공식 OpenAI 문서의 현재 Python SDK 규격을 확인하고 구현.
   파일은 메모리 WAV tuple로 전달. client는 timeout=20, max_retries=0으로 CLI에서 생성.
   모델 출력은 `parse_command`로 다시 검사. 임의 코드 실행·eval은 사용하지 않는다.
-- [ ] 해당 테스트 → PASS.
-- [ ] `feat: add two stage OpenAI voice command interpretation` 커밋.
+- [x] 해당 테스트 → PASS.
+- [x] `feat: add two stage OpenAI voice command interpretation` 커밋.
 
 ### Task 3: 마이크 구간과 로컬 호출어
 
@@ -85,33 +85,33 @@ start_timeout_s=5.0, max_record_s=10.0, min_speech_s=0.2, rms_threshold=0.015)`;
 `Microphone(device, settings)` context manager with `read_frame() -> ndarray`, `flush()`;
 `WakeDetector(model, phrase="로봇")`, `detect(samples: ndarray) -> bool`.
 
-- [ ] 실패 테스트: 시작 무음·너무 짧은 발화→None, 종료 무음·최대 녹음 길이→WAV,
+- [x] 실패 테스트: 시작 무음·너무 짧은 발화→None, 종료 무음·최대 녹음 길이→WAV,
   WAV rate/mono/PCM16 확인. 독립 호출어와 문장 내 유사 단어의 구별 확인.
   유한 프레임 소진은 무한 대기하지 않음. bounded queue overflow 시 오래된 입력 제거,
   호출어 판정 후 flush가 다음 녹음 전에 실행되는지 확인.
-- [ ] `.venv/bin/python -m pytest tests/test_voice_motor_audio.py -q` → FAIL.
-- [ ] sounddevice는 진입 시 로드하고 callback에서 추론하지 않는다.
+- [x] `.venv/bin/python -m pytest tests/test_voice_motor_audio.py -q` → FAIL.
+- [x] sounddevice는 진입 시 로드하고 callback에서 추론하지 않는다.
   입력 큐 크기를 제한하고 오래된 프레임을 버린다. 모델은 main에서 한 번 로드.
   2초 분량의 로컬 입력에서 language=ko, beam_size=1, VAD 사용.
   호출어 판정 후 준비 신호 전에 flush하고 명령 녹음을 시작한다.
-- [ ] 해당 테스트 → PASS.
-- [ ] `feat: add local Korean wake detection and bounded audio capture` 커밋.
+- [x] 해당 테스트 → PASS.
+- [x] `feat: add local Korean wake detection and bounded audio capture` 커밋.
 
 ### Task 4: 제한 검증과 REST 모터 실행
 
 **Interfaces:** `Executor(arm, limits: dict, timeout_s=5.0, tolerance=20,
 poll_s=0.05)`; `execute(command: Command) -> dict[str, int]`; `ExecutionError`.
 
-- [ ] 실패 테스트: fake arm 현재 위치 2100에서 motor_3=2200 허용 →
+- [x] 실패 테스트: fake arm 현재 위치 2100에서 motor_3=2200 허용 →
   여러개이동 1회, 목표 도달까지 조회. 여러 목표 중 하나라도 제한/변화량 초과면 쓰기 0회.
   state 누락·bool·NaN·범위 초과는 쓰기 0회. unknown 실행 거부.
   write 오류는 재시도 0회, 응답 유실 메시지. 목표 미도달은 timeout 오류.
   Ctrl-C 후 추가 쓰기 없음. 토크 변경 메서드는 호출되면 실패하는 fake로 검증.
-- [ ] `.venv/bin/python -m pytest tests/test_voice_motor_executor.py -q` → FAIL.
-- [ ] 모든 목표를 현재 위치와 제한으로 먼저 검사하고 단 한 번의 batch write.
+- [x] `.venv/bin/python -m pytest tests/test_voice_motor_executor.py -q` → FAIL.
+- [x] 모든 목표를 현재 위치와 제한으로 먼저 검사하고 단 한 번의 batch write.
   monotonic deadline 내 실제 위치 조회로 완료 판정. 반환은 확인된 위치 dict.
-- [ ] 해당 테스트 → PASS.
-- [ ] `feat: execute validated voice targets through existing robot client` 커밋.
+- [x] 해당 테스트 → PASS.
+- [x] `feat: execute validated voice targets through existing robot client` 커밋.
 
 ### Task 5: CLI 연결·문서·통합 검증
 
@@ -119,14 +119,14 @@ poll_s=0.05)`; `execute(command: Command) -> dict[str, int]`; `ExecutionError`.
 `handle_command(command: Command, executor: Executor | None) -> dict`.
 실행은 `python -m TITI.voice_motor.main`.
 
-- [ ] 실패 테스트: 기본/--dry-run은 모터 클라이언트 생성 및 HTTP 접근 0회.
+- [x] 실패 테스트: 기본/--dry-run은 모터 클라이언트 생성 및 HTTP 접근 0회.
   --execute --limits 누락은 API 호출 전에 종료 코드 2.
   --text와 --audio-file은 상호 배타, 마이크와 로컬 모델 불필요.
   unknown/해석 실패→실행 0회, 실행 오류→완료 표시 없음.
   import 전체 모듈에서 모델·마이크·HTTP 접근 0회.
   호출어 대기→녹음→API→실행→대기 및 Ctrl-C 자원 해제를 fake로 검증.
-- [ ] `.venv/bin/python -m pytest tests/test_voice_motor_main.py -q` → FAIL.
-- [ ] CLI 조립: --env-file, --wake-model, --transcription-model, --llm-model,
+- [x] `.venv/bin/python -m pytest tests/test_voice_motor_main.py -q` → FAIL.
+- [x] CLI 조립: --env-file, --wake-model, --transcription-model, --llm-model,
   --device, --base-url, --limits, --execute/--dry-run, --text/--audio-file,
   --rms-threshold 지원. --help는 선택 의존성 없이 동작.
   .gitignore에 .env/.env.local 및 실제 limits.json 추가.
@@ -134,12 +134,12 @@ poll_s=0.05)`; `execute(command: Command) -> dict[str, int]`; `ExecutionError`.
   sounddevice>=0.5,<1, python-dotenv>=1,<2, numpy>=1.26, requests>=2.32 지정.
   README에 두 발화 방식, 모델 다운로드, 마이크 권한, CPU 부하·지연,
   제한 측정, dry-run과 execute, 음성 비상 정지 부재를 명시.
-- [ ] 해당 테스트 및 전체 `.venv/bin/python -m pytest -q` → PASS.
+- [x] 해당 테스트 및 전체 `.venv/bin/python -m pytest -q` → PASS.
   `.venv/bin/ruff check --select E9,F63,F7,F82 TITI tests mediapipe_hand.py` → PASS.
   CLI --help와 --text "3번 모터 위치 2200으로 이동" --dry-run 검증.
   키는 이미 승인된 상위 .env에서 읽고 실제 요청 결과는 비밀 없이 기록.
   마이크/실제 모터 시험은 연결·권한·제한 측정 여부에 따라 증거를 분리한다.
-- [ ] `feat: expose and document wake word voice motor CLI` 커밋.
+- [x] `feat: expose and document wake word voice motor CLI` 커밋.
 
 ## Self-review
 
@@ -147,3 +147,11 @@ poll_s=0.05)`; `execute(command: Command) -> dict[str, int]`; `ExecutionError`.
 API 모델/키/JSON 계약은 Task 1·2, 제한/도달/불명확한 쓰기는 Task 4,
 실행 모드/부작용/검증 증거는 Task 5가 담당한다.
 명령 타입과 클라이언트 메서드명은 각 Task의 공개 인터페이스와 일치한다.
+
+## 실행 결과
+
+- 2026-10-17: Tasks 1~5 구현. 실제 텍스트와 합성 한국어 WAV에서 API JSON 변환 확인.
+- 최종 독립 검토의 중요 수정: 최대 녹음 길이에서 종료 무음이 없으면 WAV를 전송하지 않고 취소한다. 위 Task 3의 상한 도달 시 WAV 반환 계획을 이 결정으로 대체한다.
+- 관절 제한 예제는 실측 전 실행되지 않도록 null 템플릿으로 제공한다.
+- 원래 체크아웃과 분리된 작업 트리에서는 --env-file /Users/hwangboyun/robot/.env를 지정한다.
+- 유보한 사소한 항목: 사용자 지정 호출어 사용 시 화면 대기 안내는 기본 호출어 문구다.

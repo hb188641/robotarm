@@ -123,7 +123,10 @@ def run_voice(mic, detector, intent, executor, settings):
                 )
                 continue
             if wav is None:
-                print("명령 음성이 없습니다. 다시 호출해 주세요.", flush=True)
+                print(
+                    "명령 음성이 없거나 녹음이 불완전합니다. 다시 호출해 주세요.",
+                    flush=True,
+                )
                 continue
             print("음성 인식 및 JSON 변환 중…", flush=True)
             text, command = intent.from_audio(wav)

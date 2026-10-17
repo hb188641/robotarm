@@ -108,7 +108,7 @@ macOS의 시스템 설정 → 개인정보 보호 및 보안 → 마이크에서
 
 무음 0.8초 후 명령 녹음을 종료하고, 발화 시작 대기는 최대 5초, 녹음은 최대 10초입니다.
 `--silence-seconds`, `--max-record-seconds`, `--rms-threshold`로 조절할 수 있습니다.
-말이 없거나 0.2초보다 짧으면 API를 호출하지 않습니다. 소음이 크면 RMS 임계값을 올리세요.
+말이 없거나 0.2초보다 짧거나, 종료 무음 없이 최대 녹음 길이에 도달하면 전체 녹음을 취소하고 API를 호출하지 않습니다. 소음이 크면 RMS 임계값을 올리세요.
 녹음 중 입력 손실을 감지하면 명령을 취소합니다. 호출어 추론·API 처리 중 쌓인 입력은 버립니다.
 
 두 API 모델은 각각 설정할 수 있지만 음성 인식/Responses의 strict JSON schema를 지원하고
@@ -126,3 +126,5 @@ python -m pytest tests/test_voice_motor_*.py -q
 사용한 API 형식: [음성 전사](https://developers.openai.com/api/docs/guides/speech-to-text),
 [구조화 출력](https://developers.openai.com/api/docs/guides/structured-outputs).
 로컬 엔진: [faster-whisper](https://github.com/SYSTRAN/faster-whisper).
+
+모델 다운로드가 멈추는 환경에서는 `HF_HUB_DISABLE_XET=1 python -m TITI.voice_motor.main --dry-run`으로 표준 HTTPS 전송을 사용할 수 있습니다.

@@ -38,11 +38,15 @@ def test_silence_or_short_speech_not_sent(speech):
     assert capture_utterance(lambda: next(source), AudioSettings()) is None
 
 
-def test_maximum_duration_and_source_exhaustion():
+def test_cutoff_without_ending_silence_cancels_entire_recording():
     source = frames(100)
     result = capture_utterance(lambda: next(source), AudioSettings(max_record_s=0.6))
-    with wave.open(io.BytesIO(result)) as audio:
-        assert audio.getnframes() <= 9600
+    assert result is None
+    # The unrecorded tail might contain a correction or negation.
+    assert len(list(source)) == 120
+
+
+def test_source_exhaustion_returns_without_waiting():
     empty = iter([])
     assert capture_utterance(lambda: next(empty), AudioSettings()) is None
 

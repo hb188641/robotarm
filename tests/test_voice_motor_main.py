@@ -196,3 +196,35 @@ def test_text_and_audio_file_mutually_exclusive():
     with pytest.raises(SystemExit) as error:
         app.parser().parse_args(["--text", "hello", "--audio-file", "a.wav"])
     assert error.value.code == 2
+
+
+def test_incomplete_recording_skips_api_and_returns_to_wake():
+    class Mic:
+        discontinuities = 0
+
+        def read_frame(self):
+            return np.full(480, 0.1, dtype=np.float32)
+
+        def flush(self):
+            pass
+
+    class Detector:
+        calls = 0
+
+        def detect(self, samples):
+            self.calls += 1
+            if self.calls > 1:
+                raise KeyboardInterrupt
+            return True
+
+    def forbidden(*args):
+        pytest.fail("An incomplete utterance must not reach API or motors")
+
+    with pytest.raises(KeyboardInterrupt):
+        app.run_voice(
+            Mic(),
+            Detector(),
+            NS(from_audio=forbidden),
+            NS(execute=forbidden),
+            AudioSettings(max_record_s=0.6),
+        )

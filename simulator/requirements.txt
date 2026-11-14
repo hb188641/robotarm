@@ -1,0 +1,5 @@
+mujoco>=3.3
+numpy
+opencv-python
+flask>=3.0
+Pillow  # --snapshot / --sheet PNG 저장

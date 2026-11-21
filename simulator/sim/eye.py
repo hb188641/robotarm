@@ -48,6 +48,22 @@ class WristEye:
         self.renderer.update_scene(data, self.cam)
         return self.renderer.render().copy()
 
+    def red_pixels(self, data: mujoco.MjData) -> np.ndarray:
+        """Where the camera sees red right now (bool image), drawn into last_view.
+
+        Used to check a lift: a cube held in the jaws stays put in the wrist
+        camera's picture, one left behind or dropped moves away or shrinks.
+        """
+        rgb = self.capture(data)
+        mask = vision.red_mask(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), self.hsv) > 0
+        view = rgb.copy()
+        contours, _ = cv2.findContours(
+            mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        cv2.drawContours(view, contours, -1, (40, 160, 255), 2)
+        self.last_view = view
+        return mask
+
     def _rays(self, data, pixels: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """World-frame origin and ray directions through (u, v) pixel centers."""
         fovy = math.radians(self.m.cam_fovy[self.cam])
@@ -104,3 +120,9 @@ class WristEye:
             (cx / self.width, cy / self.height),
             best_area,
         )
+
+
+def overlap(a: np.ndarray, b: np.ndarray) -> float:
+    """Intersection over union of two bool images (0 when both are empty)."""
+    union = np.logical_or(a, b).sum()
+    return float(np.logical_and(a, b).sum() / union) if union else 0.0

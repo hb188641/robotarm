@@ -74,9 +74,9 @@ def test_internet_visitor_without_key_is_stopped(app):
     with app.test_client() as c:
         page = remote(c, "GET", "/")
         assert page.status_code == 401 and "접속 키".encode() in page.data
-        assert remote(c, "GET", "/api/state").status_code == 401
-        assert remote(c, "POST", "/api/pick").status_code == 401
-        assert remote(c, "GET", "/frame/wrist.jpg").status_code == 401
+        assert remote(c, "GET", "/pick/api/state").status_code == 401
+        assert remote(c, "POST", "/pick/api/pick").status_code == 401
+        assert remote(c, "GET", "/pick/frame/wrist.jpg").status_code == 401
         wrong = remote(c, "GET", "/?key=nope")
         assert wrong.status_code == 401 and "맞지 않습니다".encode() in wrong.data
 
@@ -93,7 +93,7 @@ def test_link_with_key_sets_a_cookie_and_hides_the_key(app, tunnel):
         )
         # The cookie now opens everything.
         assert remote(c, "GET", "/").status_code == 200
-        assert remote(c, "GET", "/api/state").status_code == 200
+        assert remote(c, "GET", "/pick/api/state").status_code == 200
         info = remote(c, "GET", "/api/info").get_json()
         assert info["remote"] and not info["can_share"]
 
@@ -102,12 +102,12 @@ def test_turning_sharing_off_revokes_the_key(app, tunnel):
     with app.test_client() as c:
         key = tunnel.key
         remote(c, "GET", f"/?key={key}")
-        assert remote(c, "GET", "/api/state").status_code == 200
+        assert remote(c, "GET", "/pick/api/state").status_code == 200
         tunnel.stop()
-        assert remote(c, "GET", "/api/state").status_code == 401
+        assert remote(c, "GET", "/pick/api/state").status_code == 401
         tunnel.start()
         tunnel.key = "a-brand-new-key"
-        assert remote(c, "GET", "/api/state").status_code == 401  # old cookie
+        assert remote(c, "GET", "/pick/api/state").status_code == 401  # old cookie
 
 
 def test_only_this_computer_switches_sharing(app, tunnel):
@@ -134,14 +134,14 @@ def test_only_this_computer_switches_sharing(app, tunnel):
 
 def test_local_and_lan_visitors_need_no_key(app):
     with app.test_client() as c:
-        assert c.get("/api/state").status_code == 200
-        lan = c.get("/api/state", base_url="http://192.168.0.205:8780")
+        assert c.get("/pick/api/state").status_code == 200
+        lan = c.get("/pick/api/state", base_url="http://192.168.0.205:8780")
         assert lan.status_code == 200
 
 
 def test_stream_frame_rate_is_capped(app):
     with app.test_client() as c:
-        r = c.get("/stream/wrist.mjpg?fps=4", buffered=False)
+        r = c.get("/pick/stream/wrist.mjpg?fps=4", buffered=False)
         frames = r.response
         next(frames)
         begin = time.monotonic()
@@ -200,3 +200,10 @@ def test_missing_cloudflared_is_explained(tmp_path):
     t.binary = None
     t.start()
     assert t.status == "error" and "brew install cloudflared" in t.error
+
+
+def test_key_link_to_a_simulator_page_stays_there(app, tunnel):
+    with app.test_client() as c:
+        assert remote(c, "GET", "/stack/").status_code == 401  # key page, not the app
+        r = remote(c, "GET", f"/pick/?key={tunnel.key}")
+        assert r.status_code == 302 and r.headers["Location"] == "/pick/"

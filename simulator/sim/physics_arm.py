@@ -85,6 +85,10 @@ class SimArm:
     def gripper_q(self) -> float:
         return float(self.d.qpos[self._qadr[5]])
 
+    def gripper_force(self) -> float:
+        """Gripper servo effort (N·m): what the real servo reports as its load."""
+        return float(self.d.actuator_force[self._act[5]])
+
     def step(self, seconds: float) -> None:
         """Advance physics by `seconds`, updating the servo setpoint every step."""
         n = max(1, round(seconds / self.m.opt.timestep))

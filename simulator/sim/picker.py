@@ -6,6 +6,11 @@
     grip   → close the moving jaw; a jaw that closes all the way means a miss
     lift   → raise it, and check the cube really came along
 
+Every decision uses only what the real arm can also know: the wrist camera's
+picture, the joint positions and the gripper's load. The cube's true position
+in the physics engine is never read here (World reports it separately as a
+referee, to grade these decisions).
+
 Postures come from `TITI/voice_motor/kinematics.solve` (the real arm's IK), so
 the commands are the same raw ticks the real arm would get. `run()` is a
 generator: the caller steps physics and calls next() once per frame.
@@ -21,7 +26,7 @@ import numpy as np
 from TITI.voice_motor import kinematics as kin
 
 from . import arm, scene
-from .eye import WristEye
+from .eye import WristEye, overlap
 from .physics_arm import SimArm
 
 SCAN_RADIUS = 0.20
@@ -36,6 +41,13 @@ FIXED_JAW_X = 0.0079
 JAW_CLEARANCE = 0.006
 GRASP_ABOVE_CENTER = 0.002
 MISS_MARGIN = 0.08  # rad: a gripper closer than this to fully shut holds nothing
+# After the lift the jaws must still be held apart with real effort (holding:
+# ~3.4 N·m, nothing between the jaws: ~0), and the red patch in the wrist
+# camera must sit where it sat when the jaws closed (held: ~95% overlap; a
+# dropped cube lands below the camera, smaller and higher up: ~0%).
+HOLD_FORCE = 0.5  # N·m
+SAME_VIEW = 0.6  # overlap (intersection over union) of the red patches
+MIN_RED_PIXELS = 200  # less than this in hand: the camera cannot judge
 MOVE_TIMEOUT = 5.0
 
 
@@ -183,26 +195,45 @@ class Picker:
 
         self.say("grip", "잡는 중")
         yield from self.gripper(open_=False, speed=1.5)
-        closed_q = arm.tick_to_q("motor_6", arm.GRIPPER_CLOSED_TICK)
-        if self.sim.gripper_q() < closed_q + MISS_MARGIN:
+        if self.jaw_gap() < MISS_MARGIN:
             self.result = "missed"
             self.say("fail", "집게가 끝까지 닫혔습니다 (큐브를 놓침)")
             yield from self.gripper(open_=True)
             yield from self.move(self.grasp_pose(found.x, found.y, found.yaw, HOVER))
             return
 
+        in_hand = self.eye.red_pixels(self.d)  # the cube between the closed jaws
         self.say("lift", "들어 올리는 중")
         yield from self.move(
             self.grasp_pose(found.x, found.y, found.yaw, LIFT), speed=0.6
         )
         yield from self.wait(0.8)
-        lifted = scene.cube_pose(self.m, self.d)[0][2] - self.size / 2
-        if lifted > LIFT * 0.6:
+        self.check_lift(in_hand)
+
+    def jaw_gap(self) -> float:
+        """How far the gripper stays from fully shut (rad): the cube's width."""
+        return self.sim.gripper_q() - arm.tick_to_q("motor_6", arm.GRIPPER_CLOSED_TICK)
+
+    def check_lift(self, in_hand) -> None:
+        """Did the cube come along? Judged like the real arm would: the jaws
+        are still held apart by something, and the camera still sees the
+        cube where it was in the hand."""
+        gap, force = self.jaw_gap(), abs(self.sim.gripper_force())
+        gripping = gap >= MISS_MARGIN and force >= HOLD_FORCE
+        detail = f"집게 벌어짐 {math.degrees(gap):.0f}°, 쥐는 힘 {force:.1f} N·m"
+        if in_hand.sum() >= MIN_RED_PIXELS:
+            same = overlap(in_hand, self.eye.red_pixels(self.d))
+            seen = same >= SAME_VIEW
+            detail += f", 카메라 속 큐브 위치 일치 {same * 100:.0f}%"
+        else:  # jaws hide the cube from the camera: the gripper decides alone
+            seen = True
+            detail += ", 카메라로는 확인 못 함"
+        if gripping and seen:
             self.result = "lifted"
-            self.say("done", f"성공: 큐브를 {lifted * 1000:.0f} mm 들어 올렸습니다")
+            self.say("done", f"성공: 들어 올린 뒤에도 큐브를 쥐고 있습니다 ({detail})")
         else:
             self.result = "dropped"
-            self.say("fail", f"큐브가 따라오지 않았습니다 ({lifted * 1000:.0f} mm)")
+            self.say("fail", f"큐브가 따라오지 않았습니다 ({detail})")
 
     def put_back(self):
         """Lower the held cube to the table, release it, and back off."""

@@ -6,16 +6,17 @@
   <title>SO-101 큐브 집기 시뮬레이터</title>
   <link rel="stylesheet" href="/web/style.css">
 </head>
-<body>
+<body data-base="/pick">
   <header class="top">
     <div class="brand">
-      <span class="logo" aria-hidden="true">◧</span>
+      <a class="logo" href="/" title="홈: 시뮬레이터 고르기" aria-label="홈">◧</a>
       <div>
         <h1>SO-101 큐브 집기 시뮬레이터</h1>
         <p class="sub">손목 카메라로 빨간 큐브를 찾아 잡고 들어 올립니다 · MuJoCo</p>
       </div>
     </div>
     <div class="top-right">
+      <a class="pill link" href="/stack/">쌓기 시뮬레이터 →</a>
       <span class="pill" id="viewers" hidden title="지금 이 시뮬레이터를 보고 있는 화면 수">👀 1</span>
       <span class="pill" id="picks">성공 0 / 0</span>
       <span class="pill conn" id="conn"><i></i><b>연결 중</b></span>
@@ -130,6 +131,7 @@
   </main>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/web/app.js"></script>
+  <script src="/web/common.js"></script>
+  <script src="/web/pick.js"></script>
 </body>
 </html>

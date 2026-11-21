@@ -3,3 +3,4 @@ numpy
 opencv-python
 flask>=3.0
 Pillow  # --snapshot / --sheet PNG 저장
+websockets>=12  # tests only (WebSocket client)

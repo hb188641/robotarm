@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SO-101 시뮬레이터</title>
+  <link rel="stylesheet" href="/web/style.css">
+  <style>
+    .home { max-width: 980px; margin: 0 auto; padding: 28px 16px 40px; }
+    .home h2.lead { font-size: 15px; font-weight: 500; color: var(--muted); margin: 0 0 16px; }
+    .sims { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+    .sim {
+      display: flex; flex-direction: column; text-decoration: none; color: var(--ink);
+      background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+      box-shadow: var(--shadow); transition: border-color 0.15s, transform 0.15s;
+    }
+    .sim:hover { border-color: var(--muted); transform: translateY(-1px); }
+    .sim .shot { aspect-ratio: 4 / 3; background: #0d0d0d; display: grid; place-items: center; position: relative; }
+    .sim .shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .sim .shot .idle { color: #8a8984; font-size: 13px; position: absolute; }
+    .sim .body { padding: 14px 16px 16px; }
+    .sim h3 { margin: 0 0 4px; font-size: 17px; }
+    .sim p { margin: 0 0 10px; color: var(--muted); font-size: 14px; }
+    .sim .meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .sim .go { margin-left: auto; font-weight: 600; color: var(--primary); font-size: 14px; }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; }
+    .dot.on { background: var(--ok); }
+    .dot.busy { background: var(--accent); }
+    .foot { margin-top: 18px; font-size: 13px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">◧</span>
+      <div>
+        <h1>SO-101 시뮬레이터</h1>
+        <p class="sub">무엇을 볼지 고르세요 · MuJoCo</p>
+      </div>
+    </div>
+  </header>
+  <main class="home">
+    <h2 class="lead">두 시뮬레이터는 서로 따로 움직입니다. 처음 여는 쪽이 그때 켜집니다.</h2>
+    <div class="sims">
+      <a class="sim" href="/pick/" data-sim="pick">
+        <div class="shot"><span class="idle">아직 꺼져 있음 · 열면 켜집니다</span><img alt="" hidden></div>
+        <div class="body">
+          <h3>큐브 집기</h3>
+          <p>손목 카메라로 빨간 큐브 하나를 찾아 잡고 들어 올립니다. 지도에서 큐브 위치를 바꿀 수 있습니다.</p>
+          <div class="meta"><span class="pill" data-status>꺼짐</span><span class="go">열기 →</span></div>
+        </div>
+      </a>
+      <a class="sim" href="/stack/" data-sim="stack">
+        <div class="shot"><span class="idle">아직 꺼져 있음 · 열면 켜집니다</span><img alt="" hidden></div>
+        <div class="body">
+          <h3>큐브 쌓기</h3>
+          <p>고정 카메라와 손목 카메라로 빨강·노랑·파랑 큐브를 찾아 한 곳에 3층으로 쌓습니다. OpenCV만, 학습 없음.</p>
+          <div class="meta"><span class="pill" data-status>꺼짐</span><span class="go">열기 →</span></div>
+        </div>
+      </a>
+    </div>
+    <p class="foot">같은 주소에 접속한 모든 화면이 같은 시뮬레이터를 함께 조작합니다. 인터넷 공유 버튼은 각 시뮬레이터 화면 위쪽에 있습니다.</p>
+  </main>
+  <script>
+    "use strict";
+    // Status of each simulation; a running one shows its latest 3rd-person frame.
+    // (Frames are only requested from running ones: asking would start the other.)
+    async function refresh() {
+      try {
+        const sims = await (await fetch("/api/sims", { cache: "no-store" })).json();
+        for (const s of sims) {
+          const card = document.querySelector(`.sim[data-sim="${s.name}"]`);
+          if (!card) continue;
+          const pill = card.querySelector("[data-status]");
+          const label = !s.running ? "꺼짐" : s.busy ? "동작 중" : "켜짐 · 대기";
+          pill.innerHTML = `<i class="dot ${!s.running ? "" : s.busy ? "busy" : "on"}"></i>${label}` +
+            (s.viewers ? ` · 👀 ${s.viewers}` : "");
+          const img = card.querySelector("img");
+          if (s.running) {
+            img.src = `/${s.name}/frame/overview.jpg?t=${Date.now()}`;
+            img.hidden = false;
+            card.querySelector(".idle").hidden = true;
+          }
+        }
+      } catch (e) { /* server gone: try again */ }
+      setTimeout(refresh, 2000);
+    }
+    refresh();
+  </script>
+</body>
+</html>

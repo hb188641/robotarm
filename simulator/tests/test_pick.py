@@ -110,3 +110,35 @@ def test_headless_cli_lifts_a_given_cube(tmp_path, capsys):
     pick_sim.main(["--headless", "--cube", "0.22", "0.06", "15", "--sheet", str(sheet)])
     assert "result: lifted" in capsys.readouterr().out
     assert sheet.stat().st_size > 50_000
+
+
+def test_picker_never_reads_the_true_cube_position(setup, monkeypatch):
+    """Like the real arm, the picker may only use the camera, joints and gripper."""
+    model, data, sim, eye = setup
+    scene.place_cube(model, data, 0.21, 0.04, math.radians(15))
+
+    def forbidden(*_):
+        raise AssertionError("picker read the cube's true pose")
+
+    monkeypatch.setattr("sim.picker.scene.cube_pose", forbidden)
+    picker = Picker(sim, eye, log=lambda _: None)
+    assert run(picker, sim) == "lifted"
+    assert "쥐고 있습니다" in picker.status and "일치" in picker.status
+
+
+def test_a_cube_left_behind_is_reported_as_dropped(setup):
+    """The cube slips out as the lift starts: gripper and camera both notice."""
+    model, data, sim, eye = setup
+    spot = (0.20, -0.03, math.radians(10))
+    scene.place_cube(model, data, *spot)
+    picker = Picker(sim, eye, log=lambda _: None)
+    taken = []
+
+    def slip(stage):
+        if stage == "lift" and not taken:
+            taken.append(True)
+            # knocked out of the jaws onto the table nearby: the jaws are empty
+            scene.place_cube(model, data, spot[0], spot[1] + 0.06, spot[2])
+
+    assert run(picker, sim, on_stage=slip) == "dropped"
+    assert "따라오지 않았습니다" in picker.status

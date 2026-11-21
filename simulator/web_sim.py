@@ -1,6 +1,6 @@
 """Browser control panel for the first-person cube pick simulation.
 
-    python simulator/web_sim.py            # then open http://localhost:8780
+    python simulator/web_sim.py            # then open http://localhost
     python simulator/web_sim.py --open     # also opens the browser
     python simulator/web_sim.py --lan      # other computers on the same network too
     python simulator/web_sim.py --share    # anywhere on the internet (Cloudflare tunnel)
@@ -16,7 +16,10 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import contextlib
+import json
 import socket
+import struct
 import subprocess
 import sys
 import threading
@@ -30,11 +33,53 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sim import arm
 from sim.share import COOKIE, Tunnel, key_matches, via_tunnel
 from sim.world import STREAMS, CommandError, World
+from sim.wsock import Closed, WebSocket
 
 WEB = Path(__file__).resolve().parent / "web"
-DEFAULT_PORT = 8780
+DEFAULT_PORT = 80  # plain http://<address>, no port to type
+FALLBACK_PORT = 8780  # when port 80 is taken or not allowed
 MAX_FPS = 20
+STATE_HZ = 12
 KEY_COOKIE_AGE = 12 * 3600
+# Each WebSocket video message: render time (s, server clock), frame id, JPEG.
+FRAME_HEADER = struct.Struct("<dI")
+# With ?ack=1 the page answers every frame; at most this many frames may be on
+# the way unanswered. Otherwise a slow link (the internet tunnel) piles frames
+# up in socket buffers and the picture falls seconds behind: now frames are
+# skipped instead, so the delay stays around one round trip.
+ACK_WINDOW = 2
+ACK_STALL = 2.0  # s without any answer: assume lost, start sending again
+
+
+class Upgraded(Response):
+    """Returned after a WebSocket ends: the socket was used directly, so
+    Werkzeug must not write an HTTP response (it treats this as a dropped
+    connection and stays quiet)."""
+
+    def __call__(self, environ, start_response):
+        raise ConnectionError("websocket finished")
+
+
+def fps_arg(default: float = MAX_FPS) -> float:
+    try:
+        return min(max(float(request.args.get("fps", default)), 1.0), MAX_FPS)
+    except ValueError:
+        return default
+
+
+def http_url(host: str, port: int) -> str:
+    return f"http://{host}" if port == 80 else f"http://{host}:{port}"
+
+
+def port_free(host: str, port: int) -> bool:
+    """Can this server listen on host:port? (taken, or not allowed below 1024)"""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind((host, port))
+        return True
+    except OSError:
+        return False
 
 
 def lan_urls(port: int) -> list[str]:
@@ -49,7 +94,7 @@ def lan_urls(port: int) -> list[str]:
             s.connect(("192.0.2.1", 9))  # TEST-NET-1, never actually contacted
             ip = s.getsockname()[0]
         if not ip.startswith("127."):
-            urls.append(f"http://{ip}:{port}")
+            urls.append(http_url(ip, port))
     except OSError:
         pass
     name = None
@@ -65,7 +110,7 @@ def lan_urls(port: int) -> list[str]:
         except (OSError, subprocess.SubprocessError):
             name = None
     if name:
-        urls.append(f"http://{name}.local:{port}")
+        urls.append(http_url(f"{name}.local", port))
     return urls
 
 
@@ -159,6 +204,19 @@ def create_app(
     def static_file(name):
         return send_from_directory(WEB, name)
 
+    @contextlib.contextmanager
+    def watching(counted: bool):
+        """One big view per open page = one viewer."""
+        if counted:
+            with viewers_lock:
+                viewers["n"] += 1
+        try:
+            yield
+        finally:  # the browser closed the page or switched views
+            if counted:
+                with viewers_lock:
+                    viewers["n"] -= 1
+
     @app.get("/api/state")
     def state():
         return jsonify({**world.state(), "viewers": viewers["n"]})
@@ -196,18 +254,11 @@ def create_app(
     def stream(name):
         if name not in STREAMS:
             return jsonify({"error": f"unknown stream {name}"}), 404
-        try:
-            fps = min(max(float(request.args.get("fps", MAX_FPS)), 1.0), MAX_FPS)
-        except ValueError:
-            fps = MAX_FPS
+        fps = fps_arg()
         main = request.args.get("main") == "1"
 
         def frames():
-            counted = main  # one big view per open page = one viewer
-            if counted:
-                with viewers_lock:
-                    viewers["n"] += 1
-            try:
+            with watching(main):
                 last, sent = 0, 0.0
                 while world.thread.is_alive():
                     # Wait out the frame interval: the next frame() call then
@@ -223,16 +274,76 @@ def create_app(
                         + jpg
                         + b"\r\n"
                     )
-            finally:  # the browser closed the page or switched views
-                if counted:
-                    with viewers_lock:
-                        viewers["n"] -= 1
 
         return Response(
             frames(),
             mimetype="multipart/x-mixed-replace; boundary=frame",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
+
+    @app.get("/ws/<name>", websocket=True)  # Werkzeug routes upgrades separately
+    def ws_stream(name):
+        """Camera frames (or, for "state", the panel state) over a WebSocket.
+
+        Used over the internet: the tunnel passes WebSocket messages through
+        one at a time, where a long MJPEG response arrives in lumps. Each frame
+        carries its render time so the page can play them back evenly.
+        """
+        if name not in (*STREAMS, "state"):
+            return jsonify({"error": f"unknown stream {name}"}), 404
+        ws = WebSocket.accept(request.environ)
+        if ws is None:
+            return jsonify({"ok": False, "error": "WebSocket 연결이 필요합니다."}), 400
+        try:
+            if name == "state":
+                push_state(ws)
+            else:
+                push_frames(
+                    ws,
+                    name,
+                    fps_arg(),
+                    request.args.get("main") == "1",
+                    ACK_WINDOW if request.args.get("ack") == "1" else 0,
+                )
+        except Closed:
+            pass
+        finally:
+            ws.finish()
+        return Upgraded()
+
+    def push_state(ws: WebSocket) -> None:
+        last = None
+        while world.thread.is_alive():
+            ws.receive(timeout=1 / STATE_HZ)  # also notices a closed page
+            body = json.dumps({**world.state(), "viewers": viewers["n"]})
+            if body != last:
+                ws.send(body)
+                last = body
+
+    def push_frames(
+        ws: WebSocket, name: str, fps: float, main: bool, window: int = 0
+    ) -> None:
+        with watching(main):
+            last, sent, unacked, heard = 0, 0.0, 0, time.monotonic()
+            while world.thread.is_alive():
+                now = time.monotonic()
+                if window and unacked >= window and now - heard > ACK_STALL:
+                    unacked = 0
+                blocked = window and unacked >= window
+                wait = 0.1 if blocked else max(0.0, 1 / fps - (now - sent))
+                if ws.receive(timeout=wait) is not None:  # an ack (any message)
+                    unacked, heard = max(0, unacked - 1), time.monotonic()
+                    continue
+                if blocked:
+                    continue
+                fid, rendered, jpg = world.frame_at(name, last)
+                if not jpg or fid == last:
+                    continue
+                last, sent = fid, time.monotonic()
+                ws.send(FRAME_HEADER.pack(rendered, fid) + jpg)
+                if not unacked:
+                    heard = sent  # the stall clock starts with the first unanswered frame
+                unacked += 1
 
     @app.get("/frame/<name>.jpg")
     def still(name):
@@ -299,7 +410,12 @@ def print_link_when_ready(tunnel: Tunnel, timeout=40.0) -> None:
 
 def main(argv=None) -> None:
     p = argparse.ArgumentParser(description="SO-101 pick simulator in the browser")
-    p.add_argument("--port", type=int, default=DEFAULT_PORT)
+    p.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help=f"default {DEFAULT_PORT}, or {FALLBACK_PORT} if that cannot be used",
+    )
     p.add_argument(
         "--lan",
         action="store_true",
@@ -316,11 +432,16 @@ def main(argv=None) -> None:
     args = p.parse_args(argv)
     host = args.host or ("0.0.0.0" if args.lan else "127.0.0.1")
     on_lan = host not in ("127.0.0.1", "localhost", "::1")
+    if args.port is None:
+        args.port = DEFAULT_PORT
+        if not port_free(host, DEFAULT_PORT):
+            print(f"포트 {DEFAULT_PORT}을 쓸 수 없어 {FALLBACK_PORT}로 엽니다.")
+            args.port = FALLBACK_PORT
 
     world = World(arm.load_profile(), seed=args.seed).start()
     tunnel = Tunnel(args.port)
     atexit.register(tunnel.stop)
-    url = f"http://localhost:{args.port}"
+    url = http_url("localhost", args.port)
     share = lan_urls(args.port) if on_lan else []
     print(f"\nSO-101 시뮬레이터: {url}  (끝내려면 Ctrl+C 또는 창 닫기)")
     if share:

@@ -62,6 +62,9 @@ def test_pick_then_put_back_from_the_browser(client):
 
     state = wait_idle(client)
     assert state["result"] == "lifted" and state["holding"]
+    # The referee (true cube height) agrees with the camera + gripper verdict.
+    assert any("판정 맞음" in item["msg"] for item in state["log"])
+    assert state["picks"]["misjudged"] == 0
     assert state["cube"]["z"] > 0.06
     assert state["sighting"] is not None
 

@@ -36,6 +36,7 @@ async function post(path, body) {
 }
 
 async function poll() {
+  if (stateSocket.live) return setTimeout(poll, 500); // the socket brings state
   try {
     const r = await fetch("/api/state", { cache: "no-store" });
     apply(await r.json());
@@ -45,6 +46,41 @@ async function poll() {
   }
   setTimeout(poll, 150);
 }
+
+// Over the internet each poll waits a full round trip (~0.3 s through the
+// tunnel), so the server pushes the state over a WebSocket instead.
+const stateSocket = {
+  ws: null,
+  live: false,
+  failures: 0,
+  timer: null,
+  start() {
+    if (!SMOOTH || this.ws) return;
+    const ws = new WebSocket(wsUrl("/ws/state"));
+    this.ws = ws;
+    ws.onmessage = (ev) => {
+      if (this.ws !== ws) return;
+      this.live = true;
+      this.failures = 0;
+      apply(JSON.parse(ev.data));
+      setOnline(true);
+    };
+    ws.onclose = () => {
+      if (this.ws !== ws) return;
+      this.ws = null;
+      if (!this.live) this.failures += 1;
+      this.live = false; // polling takes over (and notices if the server is gone)
+      if (this.failures < 3) this.timer = setTimeout(() => this.start(), 1000);
+    };
+  },
+  stop() {
+    clearTimeout(this.timer);
+    const ws = this.ws;
+    this.ws = null;
+    this.live = false;
+    if (ws) ws.close();
+  },
+};
 
 function setOnline(on) {
   if (on === online) return;
@@ -63,7 +99,9 @@ function apply(s) {
     $("viewers").hidden = s.viewers < 2;
     $("viewers").textContent = `👀 ${s.viewers}명 보는 중`;
   }
-  $("sim-time").textContent = `${s.time.toFixed(1)} s`;
+  const lag = videoDelay();
+  $("sim-time").textContent = `${s.time.toFixed(1)} s` +
+    (lag === null ? "" : ` · 영상 ${lag.toFixed(1)}초 늦게`);
   $("stage-badge").textContent = STAGE_NAME[s.stage] || s.stage;
 
   const status = $("status");
@@ -152,10 +190,153 @@ function toast(msg) {
 const STILL = new URLSearchParams(location.search).has("still");
 // Over the internet every frame costs bandwidth: fewer frames, fewer for thumbnails.
 const REMOTE = location.hostname.endsWith(".trycloudflare.com");
+// Over the internet the tunnel delivers a long MJPEG response in ~128 KB lumps
+// (the picture jumps about once a second), so frames come over WebSockets
+// instead and play back from a small buffer: a little later, but evenly.
+// ?smooth=1 / ?smooth=0 force it on / off.
+const PARAMS = new URLSearchParams(location.search);
+let SMOOTH = !STILL && "WebSocket" in window &&
+  (PARAMS.has("smooth") ? PARAMS.get("smooth") !== "0" : REMOTE);
+const FPS = { main: 20, small: REMOTE ? 3 : 10 };
 function src(view, small) {
   if (STILL) return `/frame/${view}.jpg?t=${Date.now()}`;
-  const fps = REMOTE ? (small ? 3 : 10) : small ? 10 : 20;
+  const fps = small ? FPS.small : REMOTE ? 10 : FPS.main;
   return `/stream/${view}.mjpg?fps=${fps}${small ? "" : "&main=1"}&t=${Date.now()}`;
+}
+function wsUrl(path) {
+  return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`;
+}
+
+// Never hold frames back longer than this (s): late frames are shown at once
+// (a small jump) instead of growing the delay.
+const MAX_DELAY = 0.35;
+
+// Plays timestamped frames from /ws/<view> on a canvas next to an <img>.
+// Each frame carries its render time on the server. The fastest trip seen
+// recently gives the clock offset; frames are then shown at render time +
+// that offset + a delay just big enough to cover how late frames usually
+// come (95th percentile), so network hiccups do not show as stutter.
+class SmoothVideo {
+  constructor(img) {
+    this.img = img;
+    this.canvas = document.createElement("canvas");
+    this.canvas.className = "smooth";
+    this.canvas.hidden = true;
+    img.after(this.canvas);
+    this.ctx = this.canvas.getContext("2d");
+    this.ws = null;
+    this.want = null;
+    this.reset();
+  }
+  reset() {
+    (this.queue || []).forEach((f) => f.bmp.close());
+    this.queue = [];
+    this.trips = []; // arrival - render time, seconds (includes clock offset)
+    this.offset = 0;
+    this.target = this.delay = 0.12;
+    this.shown = false;
+  }
+  play(view, fps, main) {
+    this.stop();
+    this.want = { view, fps, main };
+    this.img.hidden = true;
+    this.canvas.hidden = false;
+    this.connect();
+  }
+  stop() {
+    this.want = null;
+    clearTimeout(this.retry);
+    if (this.ws) {
+      const ws = this.ws;
+      this.ws = null;
+      ws.close();
+    }
+    this.reset();
+  }
+  connect() {
+    const { view, fps, main } = this.want;
+    // ack=1: each frame is answered, so the server never queues up a backlog.
+    const ws = new WebSocket(wsUrl(`/ws/${view}?fps=${fps}&ack=1${main ? "&main=1" : ""}`));
+    ws.binaryType = "arraybuffer";
+    this.ws = ws;
+    ws.onmessage = (ev) => this.ws === ws && this.receive(ev.data);
+    ws.onclose = () => {
+      if (this.ws !== ws) return; // replaced or stopped on purpose
+      this.ws = null;
+      if (!this.shown) this.failures = (this.failures || 0) + 1;
+      if (this.failures >= 3) return fallBackToStreams();
+      this.retry = setTimeout(() => this.want && this.connect(), 1000);
+    };
+  }
+  receive(buf) {
+    const now = performance.now() / 1000;
+    const t = new DataView(buf).getFloat64(0, true);
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send("1"); // ack
+    this.trips.push(now - t);
+    if (this.trips.length > 150) this.trips.shift(); // ~10 s of frames
+    this.offset = Math.min(...this.trips);
+    const late = this.trips.map((s) => s - this.offset).sort((a, b) => a - b);
+    const p95 = late[Math.floor(late.length * 0.95)];
+    this.target = Math.min(MAX_DELAY, Math.max(0.08, p95 + 0.05));
+    createImageBitmap(new Blob([new Uint8Array(buf, 12)], { type: "image/jpeg" }))
+      .then((bmp) => {
+        if (!this.want) return bmp.close();
+        this.queue.push({ t, bmp });
+        while (this.queue.length > 90) this.queue.shift().bmp.close(); // hidden tab
+      })
+      .catch(() => {});
+  }
+  tick(now) {
+    if (!this.queue.length) return;
+    // Grow the delay quickly when frames come late, shrink it slowly.
+    const rate = this.target > this.delay ? 0.08 : 0.01;
+    this.delay += (this.target - this.delay) * rate;
+    const due = now - this.offset - this.delay;
+    let frame = null;
+    while (this.queue.length && (this.queue[0].t <= due || !this.shown)) {
+      if (frame) frame.bmp.close();
+      frame = this.queue.shift();
+      this.shown = true;
+    }
+    if (!frame) return;
+    const c = this.canvas;
+    if (c.width !== frame.bmp.width || c.height !== frame.bmp.height) {
+      c.width = frame.bmp.width;
+      c.height = frame.bmp.height;
+    }
+    this.ctx.drawImage(frame.bmp, 0, 0);
+    frame.bmp.close();
+  }
+}
+const players = {};
+function player(img) {
+  return (players[img.id || img.closest("figure").id] ||= new SmoothVideo(img));
+}
+function show(img, view, small) {
+  if (SMOOTH) return player(img).play(view, small ? FPS.small : FPS.main, !small);
+  img.src = src(view, small);
+}
+function playFrames() {
+  const now = performance.now() / 1000;
+  Object.values(players).forEach((p) => p.tick(now));
+  requestAnimationFrame(playFrames);
+}
+requestAnimationFrame(playFrames);
+function fallBackToStreams() {
+  // WebSockets are blocked somewhere on the way: go back to plain streams.
+  if (!SMOOTH) return;
+  SMOOTH = false;
+  Object.values(players).forEach((p) => {
+    p.stop();
+    p.canvas.hidden = true;
+    p.img.hidden = false;
+  });
+  stateSocket.stop();
+  reloadStreams();
+}
+function videoDelay() {
+  const p = SMOOTH && players["main-view"];
+  return p && p.shown ? p.delay : null;
 }
 if (STILL) {
   setInterval(() => {
@@ -172,17 +353,17 @@ let mainView = "wrist";
 function setMain(view) {
   mainView = view;
   const other = view === "wrist" ? "overview" : "wrist";
-  $("main-view").src = src(view);
+  show($("main-view"), view);
   const thumb = $("thumb-other");
   thumb.dataset.view = other;
-  thumb.querySelector("img").src = src(other, true);
+  show(thumb.querySelector("img"), other, true);
   thumb.querySelector("figcaption").textContent =
     (other === "wrist" ? "1인칭" : "3인칭") + " · 클릭하면 크게";
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === view));
 }
 function reloadStreams() {
   setMain(mainView);
-  $("detector-view").src = src("detector", true);
+  show($("detector-view"), "detector", true);
 }
 document.querySelectorAll(".tab").forEach((t) => (t.onclick = () => setMain(t.dataset.view)));
 $("thumb-other").onclick = () => setMain($("thumb-other").dataset.view);
@@ -477,5 +658,6 @@ function copy(text) {
 window.addEventListener("resize", setupCanvas);
 setupCanvas();
 loop();
+stateSocket.start();
 poll();
 loadShare();

@@ -225,3 +225,11 @@ input[type=range] { flex: 1; accent-color: var(--cube); }
 .net-note { color: var(--muted); }
 .net-err { color: var(--danger); }
 .share-url code { overflow-wrap: anywhere; }
+
+/* Smooth playback over the internet: frames drawn on a canvas instead of <img>. */
+.video-main canvas.smooth { width: 100%; height: 100%; object-fit: contain; display: block; }
+.thumb canvas.smooth {
+  width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; display: block;
+  background: #0d0d0d; border: 1px solid var(--line);
+}
+.video-card img[hidden], .video-card canvas[hidden] { display: none; }

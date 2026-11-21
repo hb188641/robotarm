@@ -57,6 +57,7 @@ class World:
         self._frame_ready = threading.Condition()
         self._frames: dict[str, bytes] = {}
         self._frame_ids = dict.fromkeys(STREAMS, 0)
+        self._frame_times = dict.fromkeys(STREAMS, 0.0)  # time.monotonic() of render
         self._state: dict = {}
         self._ready = threading.Event()
         self._stop = threading.Event()
@@ -68,6 +69,7 @@ class World:
         self.task_name = ""
         self.holding = False
         self.picks_ok = self.picks_total = 0
+        self.verdicts_wrong = 0  # referee: picker verdicts the true height contradicts
         self.cube_spot = (0.22, 0.05, math.radians(20))
         self.thread = threading.Thread(target=self._run, name="sim", daemon=True)
 
@@ -98,11 +100,22 @@ class World:
         self, name: str, after: int = 0, timeout: float = 2.0
     ) -> tuple[int, bytes]:
         """Latest JPEG of a stream, waiting for one newer than `after`."""
+        fid, _, jpg = self.frame_at(name, after, timeout)
+        return fid, jpg
+
+    def frame_at(
+        self, name: str, after: int = 0, timeout: float = 2.0
+    ) -> tuple[int, float, bytes]:
+        """Like frame(), plus when it was rendered (time.monotonic())."""
         with self._frame_ready:
             self._frame_ready.wait_for(
                 lambda: self._frame_ids[name] > after or self._stop.is_set(), timeout
             )
-            return self._frame_ids[name], self._frames.get(name, b"")
+            return (
+                self._frame_ids[name],
+                self._frame_times[name],
+                self._frames.get(name, b""),
+            )
 
     # ---- commands (run on the simulation thread via call) ----
     def place_cube(self, x: float, y: float, yaw_deg: float) -> dict:
@@ -196,6 +209,20 @@ class World:
         if self.picker.result == "lifted":
             self.picks_ok += 1
             self.holding = True
+        if self.picker.result in ("lifted", "dropped"):
+            self._grade()
+
+    def _grade(self):
+        """Referee: compare the picker's verdict (camera + gripper only) with
+        the truth only the simulator knows, the cube's real height."""
+        height = scene.cube_pose(self.m, self.d)[0][2] - scene.cube_size(self.m) / 2
+        really = height > LIFT * 0.6
+        right = really == (self.picker.result == "lifted")
+        self.verdicts_wrong += 0 if right else 1
+        self._say(
+            f"채점 (시뮬레이터 정답): 큐브 높이 {height * 1000:.0f} mm → "
+            + ("판정 맞음" if right else "판정 틀림!")
+        )
 
     def _put_back(self):
         yield from self.picker.put_back()
@@ -329,10 +356,12 @@ class World:
             self._last_view_id = id(view)
             new["detector"] = self._jpeg(view)
         if new:
+            now = time.monotonic()
             with self._frame_ready:
                 for name, jpg in new.items():
                     self._frames[name] = jpg
                     self._frame_ids[name] += 1
+                    self._frame_times[name] = now
                 self._frame_ready.notify_all()
 
         cube, yaw = scene.cube_pose(self.m, self.d)
@@ -348,7 +377,11 @@ class World:
             "auto": self.auto,
             "speed": self.speed,
             "holding": self.holding,
-            "picks": {"ok": self.picks_ok, "total": self.picks_total},
+            "picks": {
+                "ok": self.picks_ok,
+                "total": self.picks_total,
+                "misjudged": self.verdicts_wrong,
+            },
             "cube": {
                 "x": float(cube[0]),
                 "y": float(cube[1]),

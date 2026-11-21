@@ -49,6 +49,8 @@ class CommandError(Exception):
 
 
 class World:
+    streams = STREAMS  # camera streams this world publishes (subclasses differ)
+
     def __init__(self, profile: dict | None = None, seed: int | None = None):
         self.profile = profile
         self.rng = np.random.default_rng(seed)
@@ -56,8 +58,8 @@ class World:
         self._lock = threading.Lock()
         self._frame_ready = threading.Condition()
         self._frames: dict[str, bytes] = {}
-        self._frame_ids = dict.fromkeys(STREAMS, 0)
-        self._frame_times = dict.fromkeys(STREAMS, 0.0)  # time.monotonic() of render
+        self._frame_ids = dict.fromkeys(self.streams, 0)
+        self._frame_times = dict.fromkeys(self.streams, 0.0)  # time.monotonic() of render
         self._state: dict = {}
         self._ready = threading.Event()
         self._stop = threading.Event()

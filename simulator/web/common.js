@@ -1,33 +1,28 @@
-// Browser panel for the SO-101 pick simulation. Polls /api/state, draws the
-// top-down table map, and sends button / map actions to the server.
+// Shared by the simulator pages (pick.js, stack.js): talking to the server,
+// state polling / WebSocket, camera streams with smooth playback, the share
+// bar and the top-down table map. Each page sets PAGE = {apply, reloadStreams}
+// and calls boot(). The page's URL prefix (/pick, /stack) comes from
+// <body data-base>.
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-const STAGES = ["scan", "hover", "descend", "grip", "lift"];
-const STAGE_NAME = {
-  idle: "대기", scan: "찾는 중", hover: "다가가는 중", descend: "내려가는 중",
-  grip: "잡는 중", lift: "들어 올리는 중", done: "성공", fail: "실패",
-  place: "내려놓는 중", home: "처음 자세로",
-};
+const BASE = document.body.dataset.base || "";
+const PAGE = { apply() {}, reloadStreams() {} };
 const MOTOR_NAME = ["어깨 회전", "어깨 들기", "팔꿈치", "손목 꺾기", "손목 회전", "그리퍼"];
-
 let state = null;
 let online = false;
-let drag = null; // {x, y} preview while placing the cube
-let yawDeg = 20;
-let yawTimer = null;
 
 // ---------- server ----------
 async function post(path, body) {
   try {
-    const r = await fetch(path, {
+    const r = await fetch(BASE + path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body || {}),
     });
     const data = await r.json();
     if (!data.ok) toast(data.error || "실패했습니다");
-    if (data.state) apply(data.state);
+    if (data.state) PAGE.apply(data.state);
     return data;
   } catch (e) {
     toast("시뮬레이터에 연결할 수 없습니다");
@@ -38,8 +33,8 @@ async function post(path, body) {
 async function poll() {
   if (stateSocket.live) return setTimeout(poll, 500); // the socket brings state
   try {
-    const r = await fetch("/api/state", { cache: "no-store" });
-    apply(await r.json());
+    const r = await fetch(BASE + "/api/state", { cache: "no-store" });
+    PAGE.apply(await r.json());
     setOnline(true);
   } catch (e) {
     setOnline(false);
@@ -56,13 +51,13 @@ const stateSocket = {
   timer: null,
   start() {
     if (!SMOOTH || this.ws) return;
-    const ws = new WebSocket(wsUrl("/ws/state"));
+    const ws = new WebSocket(wsUrl(BASE + "/ws/state"));
     this.ws = ws;
     ws.onmessage = (ev) => {
       if (this.ws !== ws) return;
       this.live = true;
       this.failures = 0;
-      apply(JSON.parse(ev.data));
+      PAGE.apply(JSON.parse(ev.data));
       setOnline(true);
     };
     ws.onclose = () => {
@@ -88,62 +83,8 @@ function setOnline(on) {
   const c = $("conn");
   c.className = "pill conn " + (on ? "on" : "off");
   c.querySelector("b").textContent = on ? "연결됨" : "연결 끊김";
-  if (on) reloadStreams();
+  if (on) PAGE.reloadStreams();
 }
-
-// ---------- state → UI ----------
-function apply(s) {
-  state = s;
-  $("picks").textContent = `성공 ${s.picks.ok} / ${s.picks.total}`;
-  if (typeof s.viewers === "number") {
-    $("viewers").hidden = s.viewers < 2;
-    $("viewers").textContent = `👀 ${s.viewers}명 보는 중`;
-  }
-  const lag = videoDelay();
-  $("sim-time").textContent = `${s.time.toFixed(1)} s` +
-    (lag === null ? "" : ` · 영상 ${lag.toFixed(1)}초 늦게`);
-  $("stage-badge").textContent = STAGE_NAME[s.stage] || s.stage;
-
-  const status = $("status");
-  status.textContent = s.status || "준비됐습니다. 지도에서 큐브를 놓고 ‘집기 시작’을 누르세요.";
-  status.className = "status" + (s.stage === "done" ? " ok" : s.stage === "fail" ? " bad" : "");
-
-  const pipe = $("pipeline");
-  const now = STAGES.indexOf(s.stage);
-  const finished = s.stage === "done" || (s.result === "lifted" && !s.busy);
-  pipe.classList.toggle("failed", s.stage === "fail");
-  [...pipe.children].forEach((li, i) => {
-    li.classList.toggle("now", i === now || (s.stage === "fail" && i === lastStage));
-    li.classList.toggle("done", finished || (now >= 0 && i < now));
-  });
-  if (now >= 0) lastStage = now;
-
-  $("btn-pick").disabled = s.busy;
-  $("btn-place").disabled = s.busy || !s.holding;
-  $("btn-home").disabled = s.busy;
-  $("btn-stop").disabled = !s.busy && !s.auto;
-  $("btn-random").disabled = s.busy;
-  $("auto").checked = s.auto;
-  $("map").classList.toggle("busy", s.busy);
-  document.querySelectorAll("#speed button").forEach((b) => {
-    b.classList.toggle("active", Number(b.dataset.speed) === s.speed);
-  });
-
-  renderTicks(s.ticks);
-  renderLog(s.log);
-  if (!drag && document.activeElement !== $("yaw")) {
-    // follow the cube's real yaw (folded to ±45°) while not editing
-    const y = fold(s.cube.yaw_deg);
-    $("yaw").value = Math.round(y);
-    $("yaw-value").textContent = `${Math.round(y)}°`;
-    yawDeg = y;
-  }
-  const c = s.cube;
-  $("coords").textContent =
-    `큐브 x ${(c.x * 1000).toFixed(0)} · y ${(c.y * 1000).toFixed(0)} · 높이 ${(c.z * 1000).toFixed(0)} mm` +
-    (s.sighting ? `   |   카메라 추정 x ${(s.sighting.x * 1000).toFixed(0)} · y ${(s.sighting.y * 1000).toFixed(0)} mm` : "");
-}
-let lastStage = -1;
 
 function fold(deg) {
   return ((((deg + 45) % 90) + 90) % 90) - 45;
@@ -199,9 +140,9 @@ let SMOOTH = !STILL && "WebSocket" in window &&
   (PARAMS.has("smooth") ? PARAMS.get("smooth") !== "0" : REMOTE);
 const FPS = { main: 20, small: REMOTE ? 3 : 10 };
 function src(view, small) {
-  if (STILL) return `/frame/${view}.jpg?t=${Date.now()}`;
+  if (STILL) return `${BASE}/frame/${view}.jpg?t=${Date.now()}`;
   const fps = small ? FPS.small : REMOTE ? 10 : FPS.main;
-  return `/stream/${view}.mjpg?fps=${fps}${small ? "" : "&main=1"}&t=${Date.now()}`;
+  return `${BASE}/stream/${view}.mjpg?fps=${fps}${small ? "" : "&main=1"}&t=${Date.now()}`;
 }
 function wsUrl(path) {
   return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`;
@@ -256,7 +197,7 @@ class SmoothVideo {
   connect() {
     const { view, fps, main } = this.want;
     // ack=1: each frame is answered, so the server never queues up a backlog.
-    const ws = new WebSocket(wsUrl(`/ws/${view}?fps=${fps}&ack=1${main ? "&main=1" : ""}`));
+    const ws = new WebSocket(wsUrl(`${BASE}/ws/${view}?fps=${fps}&ack=1${main ? "&main=1" : ""}`));
     ws.binaryType = "arraybuffer";
     this.ws = ws;
     ws.onmessage = (ev) => this.ws === ws && this.receive(ev.data);
@@ -332,7 +273,7 @@ function fallBackToStreams() {
     p.img.hidden = false;
   });
   stateSocket.stop();
-  reloadStreams();
+  PAGE.reloadStreams();
 }
 function videoDelay() {
   const p = SMOOTH && players["main-view"];
@@ -349,211 +290,6 @@ function freshen(url) {
   // new t= so the browser reconnects; keeps the other parameters (fps)
   return url.replace(/([?&]t=)\d+/, "$1" + Date.now());
 }
-let mainView = "wrist";
-function setMain(view) {
-  mainView = view;
-  const other = view === "wrist" ? "overview" : "wrist";
-  show($("main-view"), view);
-  const thumb = $("thumb-other");
-  thumb.dataset.view = other;
-  show(thumb.querySelector("img"), other, true);
-  thumb.querySelector("figcaption").textContent =
-    (other === "wrist" ? "1인칭" : "3인칭") + " · 클릭하면 크게";
-  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === view));
-}
-function reloadStreams() {
-  setMain(mainView);
-  show($("detector-view"), "detector", true);
-}
-document.querySelectorAll(".tab").forEach((t) => (t.onclick = () => setMain(t.dataset.view)));
-$("thumb-other").onclick = () => setMain($("thumb-other").dataset.view);
-document.querySelectorAll(".video-card img").forEach((img) => {
-  img.onerror = () => setTimeout(() => online && img.src && (img.src = freshen(img.src)), 1000);
-});
-
-// ---------- buttons ----------
-$("btn-pick").onclick = () => post("/api/pick");
-$("btn-place").onclick = () => post("/api/place");
-$("btn-home").onclick = () => post("/api/home");
-$("btn-stop").onclick = () => post("/api/stop");
-$("btn-reset").onclick = () => post("/api/reset");
-$("btn-random").onclick = () => post("/api/cube/random");
-$("auto").onchange = (e) => post("/api/auto", { enabled: e.target.checked });
-document.querySelectorAll("#speed button").forEach((b) => {
-  b.onclick = () => post("/api/speed", { value: Number(b.dataset.speed) });
-});
-
-// ---------- map ----------
-// Robot base frame: x forward (up on the map), y left (left on the map).
-const canvas = $("map");
-const ctx = canvas.getContext("2d");
-const VIEW = { yMin: -0.3, yMax: 0.3, xMin: -0.1, xMax: 0.34 };
-const W = 600, H = 440;
-const SCALE = W / (VIEW.yMax - VIEW.yMin); // px per metre
-
-function toPx(x, y) {
-  return [(VIEW.yMax - y) * SCALE, (VIEW.xMax - x) * SCALE];
-}
-function fromEvent(ev) {
-  const r = canvas.getBoundingClientRect();
-  const px = ((ev.clientX - r.left) / r.width) * W;
-  const py = ((ev.clientY - r.top) / r.height) * H;
-  return { x: VIEW.xMax - py / SCALE, y: VIEW.yMax - px / SCALE };
-}
-
-function setupCanvas() {
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = W * dpr;
-  canvas.height = H * dpr;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-}
-
-function css(name) {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-}
-
-function drawSquare(x, y, yawDeg, size, fill, stroke, dash) {
-  const [px, py] = toPx(x, y);
-  const s = size * SCALE;
-  ctx.save();
-  ctx.translate(px, py);
-  // map rotation: +yaw (counter-clockwise seen from above) turns left on screen
-  ctx.rotate((-yawDeg * Math.PI) / 180);
-  if (fill) {
-    ctx.fillStyle = fill;
-    ctx.fillRect(-s / 2, -s / 2, s, s);
-  }
-  if (stroke) {
-    ctx.setLineDash(dash || []);
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = stroke;
-    ctx.strokeRect(-s / 2, -s / 2, s, s);
-  }
-  ctx.restore();
-}
-
-function draw() {
-  ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = css("--table");
-  ctx.fillRect(0, 0, W, H);
-
-  // grid every 5 cm, labels every 10 cm
-  ctx.lineWidth = 1;
-  ctx.font = "11px -apple-system, sans-serif";
-  for (let v = -0.3; v <= 0.34 + 1e-9; v += 0.05) {
-    const strong = Math.abs(Math.round(v * 100) % 10) === 0;
-    ctx.strokeStyle = css(strong ? "--grid-strong" : "--grid");
-    const [, py] = toPx(v, 0);
-    if (v >= VIEW.xMin) {
-      ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(W, py); ctx.stroke();
-    }
-    const [px] = toPx(0, v);
-    ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, H); ctx.stroke();
-    if (strong && Math.abs(v) > 1e-9) {
-      ctx.fillStyle = css("--muted");
-      if (v >= VIEW.xMin) ctx.fillText(`${Math.round(v * 100)}cm`, toPx(0, 0)[0] + 4, py - 3);
-    }
-  }
-
-  // reach band (front half-annulus the arm handles comfortably)
-  const [ox, oy] = toPx(0, 0);
-  ctx.fillStyle = css("--reach");
-  ctx.beginPath();
-  const a0 = -Math.PI / 2 - (70 * Math.PI) / 180, a1 = -Math.PI / 2 + (70 * Math.PI) / 180;
-  ctx.arc(ox, oy, 0.28 * SCALE, a0, a1);
-  ctx.arc(ox, oy, 0.13 * SCALE, a1, a0, true);
-  ctx.closePath();
-  ctx.fill();
-
-  // robot base
-  ctx.fillStyle = css("--accent");
-  ctx.beginPath(); ctx.arc(ox, oy, 0.022 * SCALE, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = css("--ink");
-  ctx.font = "12px -apple-system, sans-serif";
-  ctx.fillText("로봇", ox - 12, oy + 0.022 * SCALE + 14);
-  ctx.fillStyle = css("--muted");
-  ctx.fillText("앞 ↑", ox - 12, 14);
-
-  if (!state) return;
-  const size = state.cube_size;
-
-  // arm: base → fingertip
-  const [tx, ty] = toPx(state.tip.x, state.tip.y);
-  ctx.strokeStyle = css("--accent");
-  ctx.lineWidth = 6;
-  ctx.lineCap = "round";
-  ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(tx, ty); ctx.stroke();
-
-  // camera estimate
-  if (state.sighting) {
-    drawSquare(state.sighting.x, state.sighting.y, state.sighting.yaw_deg, size, null, css("--seen"), [4, 3]);
-  }
-  // cube (preview while dragging)
-  const c = state.cube;
-  if (drag) {
-    drawSquare(c.x, c.y, c.yaw_deg, size, null, css("--muted"), [2, 3]);
-    drawSquare(drag.x, drag.y, yawDeg, size, css("--cube") + "aa", css("--cube"));
-  } else {
-    const lifted = c.z > size;
-    drawSquare(c.x, c.y, c.yaw_deg, size * (lifted ? 1.15 : 1), css("--cube"), lifted ? "#fff" : null);
-  }
-
-  // fingertip
-  ctx.fillStyle = css("--tip");
-  ctx.beginPath(); ctx.arc(tx, ty, 5, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = css("--ink");
-  ctx.font = "11px -apple-system, sans-serif";
-  ctx.fillText(`${Math.round(state.tip.z * 1000)}mm`, tx + 8, ty - 6);
-}
-
-function loop() {
-  draw();
-  requestAnimationFrame(loop);
-}
-
-function placeAllowed() {
-  if (state && state.busy) {
-    toast("동작 중에는 큐브를 옮길 수 없어요. 먼저 ■ 정지를 누르세요.");
-    return false;
-  }
-  return true;
-}
-
-canvas.addEventListener("pointerdown", (ev) => {
-  if (!placeAllowed()) return;
-  canvas.setPointerCapture(ev.pointerId);
-  drag = fromEvent(ev);
-});
-canvas.addEventListener("pointermove", (ev) => {
-  if (drag) drag = fromEvent(ev);
-});
-canvas.addEventListener("pointerup", async () => {
-  if (!drag) return;
-  const spot = drag;
-  const res = await post("/api/cube", { x: spot.x, y: spot.y, yaw_deg: yawDeg });
-  drag = null;
-  if (res.ok && res.reachable === false) toast("이 위치는 팔이 닿지 않아요. 초록 범위 안이 좋아요.");
-});
-canvas.addEventListener("wheel", (ev) => {
-  if (!state || state.busy) return;
-  ev.preventDefault();
-  setYaw(yawDeg + (ev.deltaY > 0 ? 5 : -5));
-}, { passive: false });
-
-function setYaw(v) {
-  yawDeg = fold(v);
-  $("yaw").value = Math.round(yawDeg);
-  $("yaw-value").textContent = `${Math.round(yawDeg)}°`;
-  if (state && !state.busy) {
-    state.cube.yaw_deg = yawDeg;
-    clearTimeout(yawTimer);
-    yawTimer = setTimeout(() => post("/api/cube", { x: state.cube.x, y: state.cube.y, yaw_deg: yawDeg }), 250);
-  }
-}
-$("yaw").addEventListener("input", (e) => {
-  if (!placeAllowed()) return;
-  setYaw(Number(e.target.value));
-});
 
 // ---------- sharing: same network and internet ----------
 let shareInfo = null;
@@ -655,9 +391,112 @@ function copy(text) {
   area.remove();
 }
 
-window.addEventListener("resize", setupCanvas);
-setupCanvas();
-loop();
-stateSocket.start();
-poll();
-loadShare();
+// ---------- top-down table map ----------
+// Robot base frame: x forward (up on the map), y left (left on the map).
+function makeMap(canvas) {
+  const ctx = canvas.getContext("2d");
+  const VIEW = { yMin: -0.3, yMax: 0.3, xMin: -0.1, xMax: 0.34 };
+  const W = 600, H = 440;
+  const SCALE = W / (VIEW.yMax - VIEW.yMin); // px per metre
+  const toPx = (x, y) => [(VIEW.yMax - y) * SCALE, (VIEW.xMax - x) * SCALE];
+  function fromEvent(ev) {
+    const r = canvas.getBoundingClientRect();
+    const px = ((ev.clientX - r.left) / r.width) * W;
+    const py = ((ev.clientY - r.top) / r.height) * H;
+    return { x: VIEW.xMax - py / SCALE, y: VIEW.yMax - px / SCALE };
+  }
+  function setup() {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function square(x, y, yawDeg, size, fill, stroke, dash) {
+    const [px, py] = toPx(x, y);
+    const s = size * SCALE;
+    ctx.save();
+    ctx.translate(px, py);
+    // map rotation: +yaw (counter-clockwise seen from above) turns left on screen
+    ctx.rotate((-yawDeg * Math.PI) / 180);
+    if (fill) {
+      ctx.fillStyle = fill;
+      ctx.fillRect(-s / 2, -s / 2, s, s);
+    }
+    if (stroke) {
+      ctx.setLineDash(dash || []);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = stroke;
+      ctx.strokeRect(-s / 2, -s / 2, s, s);
+    }
+    ctx.restore();
+  }
+  function table(reach = { inner: 0.13, outer: 0.28, deg: 70 }) {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = css("--table");
+    ctx.fillRect(0, 0, W, H);
+    // grid every 5 cm, labels every 10 cm
+    ctx.lineWidth = 1;
+    ctx.font = "11px -apple-system, sans-serif";
+    for (let v = -0.3; v <= 0.34 + 1e-9; v += 0.05) {
+      const strong = Math.abs(Math.round(v * 100) % 10) === 0;
+      ctx.strokeStyle = css(strong ? "--grid-strong" : "--grid");
+      const [, py] = toPx(v, 0);
+      if (v >= VIEW.xMin) {
+        ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(W, py); ctx.stroke();
+      }
+      const [px] = toPx(0, v);
+      ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, H); ctx.stroke();
+      if (strong && Math.abs(v) > 1e-9) {
+        ctx.fillStyle = css("--muted");
+        if (v >= VIEW.xMin) ctx.fillText(`${Math.round(v * 100)}cm`, toPx(0, 0)[0] + 4, py - 3);
+      }
+    }
+    // reach band (front half-annulus the arm handles comfortably)
+    const [ox, oy] = toPx(0, 0);
+    ctx.fillStyle = css("--reach");
+    ctx.beginPath();
+    const a = (reach.deg * Math.PI) / 180;
+    ctx.arc(ox, oy, reach.outer * SCALE, -Math.PI / 2 - a, -Math.PI / 2 + a);
+    ctx.arc(ox, oy, reach.inner * SCALE, -Math.PI / 2 + a, -Math.PI / 2 - a, true);
+    ctx.closePath();
+    ctx.fill();
+    // robot base
+    ctx.fillStyle = css("--accent");
+    ctx.beginPath(); ctx.arc(ox, oy, 0.022 * SCALE, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = css("--ink");
+    ctx.font = "12px -apple-system, sans-serif";
+    ctx.fillText("로봇", ox - 12, oy + 0.022 * SCALE + 14);
+    ctx.fillStyle = css("--muted");
+    ctx.fillText("앞 ↑", ox - 12, 14);
+  }
+  function arm(tip) {
+    const [ox, oy] = toPx(0, 0);
+    const [tx, ty] = toPx(tip.x, tip.y);
+    ctx.strokeStyle = css("--accent");
+    ctx.lineWidth = 6;
+    ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(tx, ty); ctx.stroke();
+    return [tx, ty];
+  }
+  function fingertip(tip) {
+    const [tx, ty] = toPx(tip.x, tip.y);
+    ctx.fillStyle = css("--tip");
+    ctx.beginPath(); ctx.arc(tx, ty, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = css("--ink");
+    ctx.font = "11px -apple-system, sans-serif";
+    ctx.fillText(`${Math.round(tip.z * 1000)}mm`, tx + 8, ty - 6);
+  }
+  window.addEventListener("resize", setup);
+  setup();
+  return { ctx, SCALE, toPx, fromEvent, square, table, arm, fingertip };
+}
+
+function css(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function boot() {
+  stateSocket.start();
+  poll();
+  loadShare();
+}

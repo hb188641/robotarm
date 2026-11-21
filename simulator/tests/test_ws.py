@@ -44,7 +44,7 @@ def server(world, tunnel):
 
 
 def viewers(port):
-    with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/state") as r:
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}/pick/api/state") as r:
         return json.load(r)["viewers"]
 
 
@@ -68,7 +68,7 @@ def test_handshake_and_frame_encoding():
 
 def test_frames_carry_their_render_time(server):
     url, port = server
-    with connect(f"{url}/ws/wrist?fps=20&main=1", max_size=None) as ws:
+    with connect(f"{url}/pick/ws/wrist?fps=20&main=1", max_size=None) as ws:
         got = []
         for _ in range(4):
             msg = ws.recv(timeout=5)
@@ -85,7 +85,7 @@ def test_acked_stream_never_runs_ahead(server):
     """With ?ack=1 at most ACK_WINDOW frames are on the way unanswered, so a
     slow link skips frames instead of falling seconds behind."""
     url, _ = server
-    with connect(f"{url}/ws/wrist?fps=20&ack=1", max_size=None) as ws:
+    with connect(f"{url}/pick/ws/wrist?fps=20&ack=1", max_size=None) as ws:
         for _ in range(web_sim.ACK_WINDOW):
             ws.recv(timeout=5)
         with pytest.raises(TimeoutError):
@@ -96,7 +96,7 @@ def test_acked_stream_never_runs_ahead(server):
 
 def test_state_is_pushed(server):
     url, _ = server
-    with connect(f"{url}/ws/state") as ws:
+    with connect(f"{url}/pick/ws/state") as ws:
         a = json.loads(ws.recv(timeout=5))
         b = json.loads(ws.recv(timeout=5))
     assert {"stage", "ticks", "cube", "viewers"} <= a.keys()
@@ -106,10 +106,10 @@ def test_state_is_pushed(server):
 def test_unknown_stream_and_plain_requests_are_refused(server):
     url, port = server
     with pytest.raises(InvalidStatus) as err:
-        connect(f"{url}/ws/nope")
+        connect(f"{url}/pick/ws/nope")
     assert err.value.response.status_code == 404
     with pytest.raises(urllib.error.HTTPError) as plain:
-        urllib.request.urlopen(f"http://127.0.0.1:{port}/ws/wrist")
+        urllib.request.urlopen(f"http://127.0.0.1:{port}/pick/ws/wrist")
     assert plain.value.code == 400
 
 
@@ -117,8 +117,8 @@ def test_internet_visitors_need_the_key(server, tunnel):
     url, _ = server
     headers = dict(CF)  # what Cloudflare adds to requests from the internet
     with pytest.raises(InvalidStatus) as err:
-        connect(f"{url}/ws/state", additional_headers=headers)
+        connect(f"{url}/pick/ws/state", additional_headers=headers)
     assert err.value.response.status_code == 401
     cookie = {**headers, "Cookie": f"sim_key={tunnel.key}"}
-    with connect(f"{url}/ws/state", additional_headers=cookie) as ws:
+    with connect(f"{url}/pick/ws/state", additional_headers=cookie) as ws:
         assert "stage" in json.loads(ws.recv(timeout=5))

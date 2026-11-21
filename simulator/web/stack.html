@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SO-101 큐브 쌓기 시뮬레이터</title>
+  <link rel="stylesheet" href="/web/style.css">
+</head>
+<body data-base="/stack">
+  <header class="top">
+    <div class="brand">
+      <a class="logo" href="/" title="홈: 시뮬레이터 고르기" aria-label="홈">◧</a>
+      <div>
+        <h1>SO-101 큐브 쌓기 시뮬레이터</h1>
+        <p class="sub">고정 카메라와 손목 카메라로 빨강·노랑·파랑 큐브를 찾아 한 곳에 쌓습니다 · OpenCV만, 학습 없음 · MuJoCo</p>
+      </div>
+    </div>
+    <div class="top-right">
+      <a class="pill link" href="/pick/">집기 시뮬레이터 →</a>
+      <span class="pill" id="viewers" hidden title="지금 이 시뮬레이터를 보고 있는 화면 수">👀 1</span>
+      <span class="pill" id="stacks">성공 0 / 0</span>
+      <span class="pill conn" id="conn"><i></i><b>연결 중</b></span>
+    </div>
+  </header>
+  <div class="share" id="share" hidden>
+    <div class="share-row" id="share-lan" hidden>
+      <span class="share-label">같은 네트워크</span>
+      <span id="share-urls"></span>
+    </div>
+    <div class="share-row" id="share-net" hidden>
+      <span class="share-label">인터넷</span>
+      <span id="net-body"></span>
+    </div>
+    <small>접속한 모든 화면이 같은 시뮬레이터를 함께 조작합니다.</small>
+  </div>
+
+  <main class="layout">
+    <section class="col-video">
+      <div class="card video-card">
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-view="overview" role="tab">3인칭</button>
+          <button class="tab" data-view="top" role="tab">고정 카메라</button>
+          <button class="tab" data-view="wrist" role="tab">손목 카메라</button>
+        </div>
+        <div class="video-main">
+          <img id="main-view" alt="시뮬레이터 화면">
+          <div class="overlay">
+            <span class="stage-badge" id="stage-badge">대기</span>
+            <span class="time" id="sim-time">0.0 s</span>
+          </div>
+        </div>
+        <div class="thumbs">
+          <figure class="thumb static">
+            <img id="top-seen" alt="고정 카메라 검출 화면">
+            <figcaption>고정 카메라가 찾은 큐브 · 색 윤곽 + 흰 십자</figcaption>
+          </figure>
+          <figure class="thumb static">
+            <img id="wrist-seen" alt="손목 카메라 검출 화면">
+            <figcaption>손목 카메라 검출 · 집기 직전 보정과 쌓은 뒤 확인</figcaption>
+          </figure>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>관절 값 <small>(raw tick, 실제 팔과 같은 단위)</small></h2>
+        <div class="ticks" id="ticks"></div>
+      </div>
+    </section>
+
+    <section class="col-side">
+      <div class="card">
+        <ol class="pipeline six" id="pipeline">
+          <li data-stage="calibrate">보정</li>
+          <li data-stage="look">지도</li>
+          <li data-stage="pick">집기</li>
+          <li data-stage="place">올리기</li>
+          <li data-stage="check">확인</li>
+          <li data-stage="final">최종</li>
+        </ol>
+        <p class="status" id="status">준비됐습니다. ‘쌓기 시작’을 누르세요.</p>
+
+        <div class="buttons three">
+          <button class="btn primary" id="btn-start">▶ 쌓기 시작</button>
+          <button class="btn" id="btn-home">처음 자세</button>
+          <button class="btn danger" id="btn-stop">■ 정지</button>
+        </div>
+        <div class="row">
+          <label class="switch">
+            <input type="checkbox" id="auto">
+            <span class="slider"></span>
+            <span>자동 반복 <small>(쌓기 → 채점 → 새 배치)</small></span>
+          </label>
+        </div>
+        <div class="row">
+          <span class="label">속도</span>
+          <div class="seg" id="speed">
+            <button data-speed="0.5">0.5×</button>
+            <button data-speed="1" class="active">1×</button>
+            <button data-speed="2">2×</button>
+            <button data-speed="4">4×</button>
+          </div>
+          <button class="btn ghost small" id="btn-reset" title="팔과 큐브를 이번 배치의 처음 상태로">↺ 처음 상태로</button>
+        </div>
+        <div class="row">
+          <span class="label">순서</span>
+          <div class="order" id="order" aria-label="쌓는 순서, 아래에서 위로"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>책상 지도 <small>위에서 본 모습</small></h2>
+          <button class="btn small" id="btn-random">🎲 새 배치</button>
+        </div>
+        <p class="hint">큐브를 <b>끌어서</b> 옮기고, 큐브 위에서 <b>휠</b>을 돌리면 회전합니다 (멈춰 있을 때만).</p>
+        <canvas id="map" width="600" height="440" aria-label="책상 지도"></canvas>
+        <div class="legend">
+          <span><i class="sw cube-red"></i><i class="sw cube-yellow"></i><i class="sw cube-blue"></i>큐브 (실제)</span>
+          <span><i class="sw seen"></i>카메라 추정</span>
+          <span><i class="sw tower"></i>탑 위치</span>
+          <span><i class="sw tip"></i>집게 끝</span>
+          <span><i class="sw reach"></i>잘 닿는 범위</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>채점 <small>시뮬레이터 정답과 비교</small></h2>
+        <div id="grade" class="grade"><p class="hint">아직 쌓은 적이 없습니다.</p></div>
+      </div>
+
+      <div class="card">
+        <h2>기록</h2>
+        <ul class="log" id="log"></ul>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/web/common.js"></script>
+  <script src="/web/stack.js"></script>
+</body>
+</html>
